@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>VBJump Pro</title>
+  <meta name="description" content="Analisi elevazione pallavolo con AI">
+  <meta name="theme-color" content="#07080d">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="VBJump">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="assets/icon-192.png">
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+
+<div class="loading-ov" id="loadingOv"><div class="spinner"></div><div class="loading-lbl">CARICAMENTO AI...</div></div>
+<div class="toast" id="toast"></div>
+
+<header class="topbar">
+  <div class="topbar-logo" id="topbarLogo">VB<span>JUMP</span></div>
+  <div class="topbar-sub">VOLLEYBALL ANALYTICS PRO</div>
+</header>
+
+<!-- ═══ ATLETI ═══ -->
+<div class="page active" id="page-athletes">
+  <div class="page-hd"><div class="page-title">ATLETI</div><div class="page-sub">PROFILI E RECORD PERSONALI</div></div>
+  <div class="athletes-list" id="athletesList"></div>
+  <div class="add-btn-big" onclick="openAddAthlete()" style="margin-top:10px;">
+    <span style="font-size:1.2rem;">＋</span> NUOVO ATLETA
+  </div>
+</div>
+
+<!-- ═══ ANALISI ═══ -->
+<div class="page" id="page-analysis">
+  <div class="page-hd"><div class="page-title">ANALISI</div><div class="page-sub">CARICA VIDEO E MISURA IL SALTO</div></div>
+  <div class="stats-strip">
+    <div class="stat-tile st-blue"><div class="st-lbl">MAX ELEVAZIONE</div><div class="st-val" id="maxJump">--<span class="st-unit">cm</span></div><div class="st-sub" id="maxBadge">In attesa</div></div>
+    <div class="stat-tile st-green"><div class="st-lbl">SALTO CORRENTE</div><div class="st-val" id="curJump">--<span class="st-unit">cm</span></div><div class="st-sub" id="curBadge">—</div></div>
+    <div class="stat-tile st-red"><div class="st-lbl">SALTI TOTALI</div><div class="st-val" id="jumpCount">0</div><div class="st-sub">sessione</div></div>
+    <div class="stat-tile st-yellow"><div class="st-lbl">MEDIA</div><div class="st-val" id="avgJump">--<span class="st-unit">cm</span></div><div class="st-sub" id="fatigueBadge">sessione</div></div>
+    <div class="stat-tile st-green"><div class="st-lbl">TEMPO DI VOLO</div><div class="st-val" id="flightTime">--<span class="st-unit">ms</span></div><div class="st-sub" id="flightSub">ultimo salto</div></div>
+    <div class="stat-tile st-blue"><div class="st-lbl">VEL. RINCORSA</div><div class="st-val" id="approachSpeed">--<span class="st-unit">m/s</span></div><div class="st-sub" id="approachSub">stima</div></div>
+  </div>
+  <div id="uploadWrap">
+    <div class="upload-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+      <span style="font-size:2.2rem;display:block;margin-bottom:10px;">🏐</span>
+      <h3>CARICA VIDEO</h3>
+      <p>Tocca per selezionare un video dalla galleria<br>MP4 · MOV · Slow-motion supportato</p>
+      <button class="btn btn-primary" onclick="event.stopPropagation();document.getElementById('fileInput').click()">SCEGLI VIDEO</button>
+    </div>
+    <input type="file" id="fileInput" accept="video/*">
+  </div>
+  <div id="videoWrap" style="display:none;">
+    <div class="video-stack">
+      <div class="vpanel">
+        <div class="vpanel-bar"><div class="dot live"></div><span class="vpanel-lbl">VIDEO ORIGINALE</span></div>
+        <div class="canvas-wrap"><video id="videoEl" controls playsinline></video></div>
+      </div>
+      <div class="vpanel">
+        <div class="vpanel-bar"><div class="dot" id="dot2"></div><span class="vpanel-lbl">ANALISI POSE</span></div>
+        <div class="canvas-wrap"><canvas id="outputCanvas"></canvas></div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:10px;">
+      <div class="card-hd"><span class="card-lbl">⚡ PROFILO ELEVAZIONE</span></div>
+      <div class="card-body" style="padding:12px;"><div class="chart-box"><canvas id="heightChart"></canvas></div></div>
+    </div>
+    <div class="card">
+      <div class="card-hd"><span class="card-lbl">SALVA SESSIONE</span></div>
+      <div class="card-body">
+        <div class="fg"><label class="lbl">ATLETA</label><select class="inp" id="sessionAthlete"></select></div>
+        <div class="fg"><label class="lbl">NOTE (opzionale)</label><input class="inp" id="sessionNote" type="text" placeholder="es. Pre-gara, stanco..."></div>
+        <div style="display:flex;gap:10px;">
+          <button class="btn btn-green" style="flex:1;justify-content:center;" id="saveBtn" onclick="saveSession()" disabled>💾 SALVA</button>
+          <button class="btn" id="waBtn" onclick="shareWhatsApp()" disabled
+            style="flex:1;justify-content:center;background:#25D366;color:#fff;border:none;">📤 WHATSAPP</button>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-hd"><span class="card-lbl">STORICO SALTI</span></div>
+      <div class="card-body" style="padding:10px 14px;">
+        <div class="jump-list" id="jumpList"><div style="text-align:center;padding:16px;font-family:'JetBrains Mono',monospace;font-size:0.65rem;color:var(--muted);">Nessun salto ancora</div></div>
+      </div>
+    </div>
+    <!-- Barra progresso calibrazione -->
+    <div id="calibBarWrap" style="margin-bottom:8px;padding:10px 14px;
+      background:rgba(0,0,0,0.3);border:1px solid var(--brd);border-radius:7px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:0.6rem;
+          color:var(--muted);letter-spacing:2px;">CALIBRAZIONE ATLETA</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:0.6rem;color:var(--muted);">
+          Tieni l'atleta fermo 2-3 sec
+        </span>
+      </div>
+      <div style="height:6px;background:var(--brd2);border-radius:3px;overflow:hidden;">
+        <div id="calibBar" style="height:100%;width:0%;border-radius:3px;
+          background:var(--blue);transition:width 0.3s,background 0.3s;"></div>
+      </div>
+    </div>
+
+    <div class="status" id="statusBar">Pronto. Premi AVVIA ANALISI.</div>
+
+    <!-- Selettore framerate video -->
+    <div class="card" style="margin-top:10px;">
+      <div class="card-hd"><span class="card-lbl">🎥 TIPO DI VIDEO</span></div>
+      <div class="card-body" style="padding:10px 14px;">
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;">
+          <button onclick="selectFps(this,1)" id="fps-1"
+            style="padding:8px 4px;border-radius:6px;border:1px solid var(--brd);
+            background:rgba(79,142,255,0.15);color:var(--blue);font-family:'JetBrains Mono',monospace;
+            font-size:0.6rem;cursor:pointer;letter-spacing:1px;">
+            30fps<br><span style="color:var(--muted);font-size:0.55rem;">normale</span>
+          </button>
+          <button onclick="selectFps(this,2)" id="fps-2"
+            style="padding:8px 4px;border-radius:6px;border:1px solid var(--brd);
+            background:transparent;color:var(--muted);font-family:'JetBrains Mono',monospace;
+            font-size:0.6rem;cursor:pointer;letter-spacing:1px;">
+            60fps<br><span style="font-size:0.55rem;">slow-mo</span>
+          </button>
+          <button onclick="selectFps(this,4)" id="fps-4"
+            style="padding:8px 4px;border-radius:6px;border:1px solid var(--brd);
+            background:transparent;color:var(--muted);font-family:'JetBrains Mono',monospace;
+            font-size:0.6rem;cursor:pointer;letter-spacing:1px;">
+            120fps<br><span style="font-size:0.55rem;">slow-mo</span>
+          </button>
+          <button onclick="selectFps(this,8)" id="fps-8"
+            style="padding:8px 4px;border-radius:6px;border:1px solid var(--brd);
+            background:transparent;color:var(--muted);font-family:'JetBrains Mono',monospace;
+            font-size:0.6rem;cursor:pointer;letter-spacing:1px;">
+            240fps<br><span style="font-size:0.55rem;">ultra</span>
+          </button>
+        </div>
+        <input type="hidden" id="videoFpsSelect" value="1">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:0.58rem;color:var(--muted);margin-top:8px;">
+          💡 Seleziona il framerate con cui hai registrato il video
+        </div>
+      </div>
+    </div>
+
+    <!-- Fattore correzione fine -->
+    <div class="card" style="margin-top:10px;">
+      <div class="card-hd">
+        <span class="card-lbl">🎯 CALIBRAZIONE FINE</span>
+        <span id="corrFactorDisplay" style="font-family:'JetBrains Mono',monospace;font-size:0.62rem;color:var(--blue);">fattore ×1.00</span>
+      </div>
+      <div class="card-body" style="padding:12px 16px;">
+        <div style="font-size:0.75rem;color:var(--muted);margin-bottom:10px;line-height:1.6;">
+          Se conosci l'elevazione reale dell'atleta (es. da test con metro o saltimetro), regola qui per calibrare con precisione.
+        </div>
+        <input type="range" id="corrFactorInput" min="0.5" max="2.0" step="0.05" value="1.0"
+          oninput="setCorrectionFactor(this.value)"
+          style="width:100%;accent-color:var(--blue);margin-bottom:8px;">
+        <div style="display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:0.58rem;color:var(--muted);">
+          <span>×0.5 (dimezza)</span><span>×1.0 (default)</span><span>×2.0 (raddoppia)</span>
+        </div>
+        <div style="margin-top:10px;padding:8px;background:rgba(79,142,255,0.06);border:1px solid rgba(79,142,255,0.2);border-radius:6px;font-family:'JetBrains Mono',monospace;font-size:0.6rem;color:var(--blue);line-height:1.8;">
+          💡 Calibra una volta sola con atleta di cui conosci il salto reale:<br>
+          · App dà 40cm, reale 60cm → ×1.50<br>
+          · App dà 50cm, reale 60cm → ×1.20<br>
+          · App dà 56cm, reale 56cm → ×1.00 ✓<br>
+          · Poi usa sempre lo stesso fattore e distanza
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:10px;margin-top:10px;">
+      <button class="btn btn-primary" style="flex:1;justify-content:center;" id="analyzeBtn" onclick="startAnalysis()">▶ AVVIA ANALISI</button>
+      <button class="btn btn-outline btn-sm" onclick="openModal('guideModal')" title="Guida ripresa">📖</button>
+      <button class="btn btn-outline btn-sm" onclick="resetAnalysis()">✕</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ RANKING ═══ -->
+<div class="page" id="page-ranking">
+  <div class="page-hd"><div class="page-title">CLASSIFICA</div><div class="page-sub">RANKING TEAM PER ELEVAZIONE</div></div>
+  <div id="rankingContent"></div>
+</div>
+
+<!-- ═══ SCHEDA ═══ -->
+<div class="page" id="page-training">
+  <div class="page-hd"><div class="page-title">SCHEDA</div><div class="page-sub">ALLENAMENTO PERSONALIZZATO</div></div>
+  <div class="fg"><label class="lbl">ATLETA</label><select class="inp" id="trainingAthlete" onchange="renderTraining()"><option value="">— Seleziona atleta —</option></select></div>
+  <div id="trainingContent"></div>
+</div>
+
+<!-- ═══ CONFRONTO ═══ -->
+<div class="page" id="page-compare">
+  <div class="page-hd"><div class="page-title">CONFRONTO</div><div class="page-sub">PROGRESSI E CONFRONTO ATLETI</div></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+    <div class="fg" style="margin:0;"><label class="lbl">ATLETA 1</label><select class="inp" id="cmpSelect" onchange="renderCompare()"><option value="">— Seleziona —</option></select></div>
+    <div class="fg" style="margin:0;"><label class="lbl">VS ATLETA 2</label><select class="inp" id="cmpSelect2" onchange="renderCompare()"><option value="">— Nessuno —</option></select></div>
+  </div>
+  <div id="compareContent">
+    <div style="text-align:center;padding:40px 16px;color:var(--muted);">
+      <div style="font-size:2rem;margin-bottom:10px;">📊</div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:0.7rem;letter-spacing:2px;">Seleziona un atleta</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ IMPOSTAZIONI ═══ -->
+<div class="page" id="page-settings">
+  <div class="page-hd"><div class="page-title">IMPOSTAZIONI</div><div class="page-sub">CLUB, BACKUP, DATI</div></div>
+
+  <div class="card">
+    <div class="card-hd"><span class="card-lbl">🏟 PERSONALIZZAZIONE CLUB</span></div>
+    <div class="card-body">
+      <div class="fg"><label class="lbl">NOME CLUB</label><input class="inp" id="clubName" type="text" placeholder="es. Volley Roma ASD"></div>
+      <div class="fg"><label class="lbl">CITTÀ</label><input class="inp" id="clubCity" type="text" placeholder="es. Roma"></div>
+      <div class="fg-row">
+        <div class="fg"><label class="lbl">EMOJI LOGO</label><input class="inp" id="clubLogo" type="text" placeholder="🏐" maxlength="2"></div>
+        <div class="fg"><label class="lbl">COLORE PRINCIPALE</label><input class="inp" id="clubColor" type="color" value="#4f8eff" style="height:44px;padding:4px;"></div>
+      </div>
+      <button class="btn btn-primary btn-full" onclick="saveClubSettings()">💾 SALVA IMPOSTAZIONI</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-hd"><span class="card-lbl">💾 BACKUP & RIPRISTINO</span></div>
+    <div class="card-body">
+      <div style="font-size:0.8rem;color:var(--muted);margin-bottom:14px;">
+        Esporta tutti i dati in un file JSON. Puoi reimportarlo su qualsiasi dispositivo o dopo aver reinstallato l'app.
+      </div>
+      <button class="btn btn-primary btn-full" onclick="backupData()" style="margin-bottom:10px;">📥 SCARICA BACKUP JSON</button>
+      <button class="btn btn-outline btn-full" onclick="document.getElementById('restoreInput').click()">📤 RIPRISTINA DA BACKUP</button>
+      <input type="file" id="restoreInput" accept=".json" onchange="restoreData(event)">
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-hd"><span class="card-lbl">📊 ESPORTA DATI</span></div>
+    <div class="card-body">
+      <div style="font-size:0.8rem;color:var(--muted);margin-bottom:14px;">
+        Esporta tutti i dati atleti e sessioni in formato CSV apribile con Excel.
+      </div>
+      <button class="btn btn-green btn-full" onclick="exportExcel()">📊 SCARICA EXCEL / CSV</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-hd"><span class="card-lbl">ℹ️ INFO APP</span></div>
+    <div class="card-body">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:0.65rem;color:var(--muted);line-height:2;">
+        <div>VBJump Pro v4.0</div>
+        <div>Atleti salvati: <span id="infoAthletes">0</span></div>
+        <div>Sessioni totali: <span id="infoSessions">0</span></div>
+        <div>Dati salvati su: localStorage browser</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ BOTTOM NAV ═══ -->
+<nav class="bottom-nav">
+  <button class="nav-tab active" id="tab-athletes" onclick="showPage('athletes')"><span class="ni">👥</span>ATLETI</button>
+  <button class="nav-tab" id="tab-analysis" onclick="showPage('analysis')"><span class="ni">🎬</span>ANALISI</button>
+  <button class="nav-tab" id="tab-ranking" onclick="showPage('ranking')"><span class="ni">🏆</span>RANKING</button>
+  <button class="nav-tab" id="tab-training" onclick="showPage('training')"><span class="ni">📋</span>SCHEDA</button>
+  <button class="nav-tab" id="tab-compare" onclick="showPage('compare')"><span class="ni">📊</span>STORICO</button>
+  <button class="nav-tab" id="tab-settings" onclick="showPage('settings')"><span class="ni">⚙️</span>CLUB</button>
+</nav>
+
+<!-- ═══ MODAL: ATLETA ═══ -->
+<div class="modal-ov" id="modalAthlete">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="modalAthleteTitle">NUOVO ATLETA</div>
+    <input type="hidden" id="aEditId">
+    <div class="fg"><label class="lbl">NOME COMPLETO</label><input class="inp" id="aName" type="text" placeholder="es. Marco Rossi"></div>
+    <div class="fg"><label class="lbl">RUOLO</label>
+      <select class="inp" id="aRole">
+        <option>Schiacciatore</option><option>Palleggiatore</option><option>Libero</option>
+        <option>Centrale</option><option>Opposto</option><option>Ricevitore</option>
+      </select>
+    </div>
+    <div class="fg-row">
+      <div class="fg"><label class="lbl">ANNO NASCITA</label><input class="inp" id="aBirth" type="number" placeholder="2000" min="1970" max="2015"></div>
+      <div class="fg"><label class="lbl">EMOJI</label><input class="inp" id="aEmoji" type="text" placeholder="🏐" maxlength="2"></div>
+    </div>
+    <div class="fg-row">
+      <div class="fg"><label class="lbl">ALTEZZA (cm)</label><input class="inp" id="aHeight" type="number" placeholder="185" min="140" max="230"></div>
+      <div class="fg"><label class="lbl">PESO (kg)</label><input class="inp" id="aWeight" type="number" placeholder="80" min="40" max="150"></div>
+    </div>
+    <div class="fg"><label class="lbl">OBIETTIVO ELEVAZIONE (cm)</label><input class="inp" id="aGoal" type="number" placeholder="es. 60" min="20" max="120"></div>
+    <div class="modal-footer">
+      <button class="btn btn-red btn-sm" id="aDeleteBtn" style="display:none;" onclick="confirmDeleteAthlete()">🗑</button>
+      <button class="btn btn-outline btn-sm" style="flex:1;justify-content:center;" onclick="closeModal('modalAthlete')">ANNULLA</button>
+      <button class="btn btn-primary btn-sm" style="flex:1;justify-content:center;" id="aSaveBtn" onclick="saveAthlete()">CREA ✓</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MODAL: TIMER ═══ -->
+<div class="modal-ov" id="timerModal">
+  <div class="modal" style="text-align:center;">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="timerLabel" style="font-size:1rem;letter-spacing:2px;">RECUPERO</div>
+    <input type="hidden" id="timerMaxSec" value="120">
+
+    <!-- SVG ring -->
+    <div style="position:relative;width:140px;height:140px;margin:16px auto;">
+      <svg width="140" height="140" style="transform:rotate(-90deg);">
+        <circle cx="70" cy="70" r="54" fill="none" stroke="var(--brd)" stroke-width="8"/>
+        <circle id="timerRing" cx="70" cy="70" r="54" fill="none"
+          stroke="var(--green)" stroke-width="8" stroke-linecap="round"
+          style="transition:stroke-dashoffset 1s linear;"/>
+      </svg>
+      <div id="timerDisplay" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+        font-family:'Bebas Neue',sans-serif;font-size:2.8rem;color:var(--green);letter-spacing:2px;">
+        2:00
+      </div>
+    </div>
+
+    <div style="display:flex;gap:8px;justify-content:center;margin-bottom:12px;">
+      <button onclick="addTimerSeconds(-15)" class="btn btn-outline btn-sm">-15s</button>
+      <button onclick="addTimerSeconds(15)" class="btn btn-outline btn-sm">+15s</button>
+    </div>
+
+    <div style="display:flex;gap:10px;">
+      <button class="btn btn-outline btn-sm" onclick="resetTimer()" style="flex:1;justify-content:center;">↺ RESET</button>
+      <button class="btn btn-primary" id="timerStartBtn" onclick="startPauseTimer()" style="flex:2;justify-content:center;">▶ START</button>
+      <button class="btn btn-outline btn-sm" onclick="closeTimer()" style="flex:1;justify-content:center;">✕</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MODAL: GUIDA VIDEO ═══ -->
+<div class="modal-ov" id="guideModal">
+  <div class="modal" style="max-height:85vh;overflow-y:auto;">
+    <div class="modal-handle"></div>
+    <div class="modal-title">📖 GUIDA RIPRESA</div>
+
+    <!-- Illustrazione posizione camera -->
+    <div style="background:var(--surf2);border:1px solid var(--brd);border-radius:8px;padding:14px;margin-bottom:14px;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:0.62rem;color:var(--blue);letter-spacing:2px;margin-bottom:10px;">📐 POSIZIONE CAMERA</div>
+      <!-- SVG illustrazione laterale -->
+      <svg viewBox="0 0 280 120" style="width:100%;margin-bottom:10px;">
+        <!-- Campo -->
+        <rect x="20" y="90" width="240" height="4" fill="#1c2040" rx="2"/>
+        <!-- Atleta stilizzato -->
+        <circle cx="140" cy="55" r="10" fill="#4f8eff" opacity="0.8"/>
+        <line x1="140" y1="65" x2="140" y2="88" stroke="#4f8eff" stroke-width="3"/>
+        <line x1="140" y1="72" x2="125" y2="82" stroke="#4f8eff" stroke-width="2.5"/>
+        <line x1="140" y1="72" x2="155" y2="82" stroke="#4f8eff" stroke-width="2.5"/>
+        <line x1="140" y1="88" x2="130" y2="100" stroke="#4f8eff" stroke-width="2.5"/>
+        <line x1="140" y1="88" x2="150" y2="100" stroke="#4f8eff" stroke-width="2.5"/>
+        <!-- Camera lato -->
+        <rect x="22" y="68" width="22" height="16" rx="3" fill="#00e8b0" opacity="0.9"/>
+        <circle cx="33" cy="76" r="5" fill="#07080d"/>
+        <circle cx="33" cy="76" r="2.5" fill="#00e8b0" opacity="0.5"/>
+        <text x="33" y="108" text-anchor="middle" font-size="8" fill="#00e8b0" font-family="monospace">✓ LATERALE</text>
+        <!-- Distanza -->
+        <line x1="44" y1="76" x2="130" y2="76" stroke="#4a5080" stroke-width="1" stroke-dasharray="4,3"/>
+        <text x="87" y="72" text-anchor="middle" font-size="8" fill="#4a5080" font-family="monospace">4-6m</text>
+        <!-- Camera frontale ok -->
+        <rect x="238" y="68" width="22" height="16" rx="3" fill="#ffd166" opacity="0.9"/>
+        <circle cx="249" cy="76" r="5" fill="#07080d"/>
+        <circle cx="249" cy="76" r="2.5" fill="#ffd166" opacity="0.5"/>
+        <text x="249" y="108" text-anchor="middle" font-size="8" fill="#ffd166" font-family="monospace">ok FRONTE</text>
+        <!-- Altezza camera -->
+        <line x1="10" y1="75" x2="10" y2="94" stroke="#4a5080" stroke-width="1"/>
+        <text x="6" y="85" text-anchor="middle" font-size="7" fill="#4a5080" font-family="monospace" transform="rotate(-90,6,85)">~90cm</text>
+      </svg>
+      <div style="font-size:0.78rem;color:var(--muted);line-height:1.7;">
+        <div>✅ <strong style="color:var(--txt);">Laterale</strong> — migliore per misurare il salto verticale</div>
+        <div>✅ <strong style="color:var(--txt);">Frontale</strong> — accettabile, atleta al centro</div>
+        <div>❌ Non riprendere dall'alto o troppo lontano</div>
+      </div>
+    </div>
+
+    <!-- Illustrazione sequenza video -->
+    <div style="background:var(--surf2);border:1px solid var(--brd);border-radius:8px;padding:14px;margin-bottom:14px;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:0.62rem;color:var(--blue);letter-spacing:2px;margin-bottom:10px;">🎬 SEQUENZA VIDEO CORRETTA</div>
+      <svg viewBox="0 0 280 80" style="width:100%;margin-bottom:10px;">
+        <!-- Step 1: fermo -->
+        <rect x="5" y="10" width="60" height="60" rx="4" fill="#0d0f1a" stroke="#1c2040"/>
+        <circle cx="35" cy="32" r="7" fill="#00e8b0" opacity="0.7"/>
+        <line x1="35" y1="39" x2="35" y2="58" stroke="#00e8b0" stroke-width="2.5"/>
+        <line x1="35" y1="45" x2="25" y2="52" stroke="#00e8b0" stroke-width="2"/>
+        <line x1="35" y1="45" x2="45" y2="52" stroke="#00e8b0" stroke-width="2"/>
+        <line x1="35" y1="58" x2="28" y2="68" stroke="#00e8b0" stroke-width="2"/>
+        <line x1="35" y1="58" x2="42" y2="68" stroke="#00e8b0" stroke-width="2"/>
+        <text x="35" y="78" text-anchor="middle" font-size="7.5" fill="#00e8b0" font-family="monospace">① FERMO</text>
+        <text x="35" y="87" text-anchor="middle" font-size="6.5" fill="#4a5080" font-family="monospace">2-3 sec</text>
+
+        <!-- Freccia -->
+        <text x="72" y="42" font-size="14" fill="#4a5080">→</text>
+
+        <!-- Step 2: rincorsa -->
+        <rect x="83" y="10" width="60" height="60" rx="4" fill="#0d0f1a" stroke="#1c2040"/>
+        <circle cx="113" cy="32" r="7" fill="#ffd166" opacity="0.7"/>
+        <line x1="108" y1="38" x2="113" y2="58" stroke="#ffd166" stroke-width="2.5" transform="rotate(-10,113,45)"/>
+        <line x1="113" y1="45" x2="103" y2="50" stroke="#ffd166" stroke-width="2"/>
+        <line x1="113" y1="45" x2="123" y2="48" stroke="#ffd166" stroke-width="2"/>
+        <line x1="113" y1="58" x2="104" y2="68" stroke="#ffd166" stroke-width="2"/>
+        <line x1="113" y1="58" x2="121" y2="66" stroke="#ffd166" stroke-width="2"/>
+        <text x="113" y="78" text-anchor="middle" font-size="7.5" fill="#ffd166" font-family="monospace">② RINCORSA</text>
+
+        <!-- Freccia -->
+        <text x="150" y="42" font-size="14" fill="#4a5080">→</text>
+
+        <!-- Step 3: salto -->
+        <rect x="161" y="10" width="60" height="60" rx="4" fill="#0d0f1a" stroke="#1c2040"/>
+        <circle cx="191" cy="18" r="7" fill="#ff5f7e" opacity="0.7"/>
+        <line x1="191" y1="25" x2="191" y2="44" stroke="#ff5f7e" stroke-width="2.5"/>
+        <line x1="191" y1="31" x2="181" y2="24" stroke="#ff5f7e" stroke-width="2"/>
+        <line x1="191" y1="31" x2="201" y2="24" stroke="#ff5f7e" stroke-width="2"/>
+        <line x1="191" y1="44" x2="184" y2="55" stroke="#ff5f7e" stroke-width="2"/>
+        <line x1="191" y1="44" x2="198" y2="55" stroke="#ff5f7e" stroke-width="2"/>
+        <line x1="191" y1="58" x2="191" y2="10" stroke="#ff5f7e" stroke-width="1" stroke-dasharray="3,3" opacity="0.4"/>
+        <text x="191" y="78" text-anchor="middle" font-size="7.5" fill="#ff5f7e" font-family="monospace">③ SALTO</text>
+
+        <!-- Freccia -->
+        <text x="228" y="42" font-size="14" fill="#4a5080">→</text>
+
+        <!-- Step 4: atterra -->
+        <rect x="239" y="10" width="38" height="60" rx="4" fill="#0d0f1a" stroke="#1c2040"/>
+        <circle cx="258" cy="32" r="7" fill="#4f8eff" opacity="0.7"/>
+        <line x1="258" y1="39" x2="258" y2="58" stroke="#4f8eff" stroke-width="2.5"/>
+        <line x1="258" y1="45" x2="248" y2="52" stroke="#4f8eff" stroke-width="2"/>
+        <line x1="258" y1="45" x2="268" y2="52" stroke="#4f8eff" stroke-width="2"/>
+        <line x1="258" y1="58" x2="251" y2="68" stroke="#4f8eff" stroke-width="2"/>
+        <line x1="258" y1="58" x2="265" y2="68" stroke="#4f8eff" stroke-width="2"/>
+        <text x="258" y="78" text-anchor="middle" font-size="7.5" fill="#4f8eff" font-family="monospace">④ TERRA</text>
+      </svg>
+      <div style="font-size:0.78rem;color:var(--muted);line-height:1.7;">
+        <div>① Inizia con l'atleta <strong style="color:var(--txt);">fermo nel frame 2-3 secondi</strong> — serve per calibrare</div>
+        <div>② Rincorsa di 3 passi all'interno del frame</div>
+        <div>③ Il picco del salto deve essere <strong style="color:var(--txt);">visibile per intero</strong></div>
+        <div>④ Atterraggio completo nel frame prima di tagliare</div>
+      </div>
+    </div>
+
+    <!-- Fps guide -->
+    <div style="background:var(--surf2);border:1px solid var(--brd);border-radius:8px;padding:14px;margin-bottom:14px;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:0.62rem;color:var(--blue);letter-spacing:2px;margin-bottom:10px;">🎥 FRAMERATE CONSIGLIATO</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:0.78rem;">
+        <div style="padding:8px;background:rgba(0,232,176,0.06);border:1px solid rgba(0,232,176,0.2);border-radius:6px;">
+          <div style="color:var(--green);font-weight:600;margin-bottom:3px;">240fps ★ IDEALE</div>
+          <div style="color:var(--muted);">iPhone 13+, Samsung S21+. Massima precisione.</div>
+        </div>
+        <div style="padding:8px;background:rgba(79,142,255,0.06);border:1px solid rgba(79,142,255,0.2);border-radius:6px;">
+          <div style="color:var(--blue);font-weight:600;margin-bottom:3px;">120fps ✓ OTTIMO</div>
+          <div style="color:var(--muted);">Quasi tutti gli smartphone moderni.</div>
+        </div>
+        <div style="padding:8px;background:rgba(255,209,102,0.06);border:1px solid rgba(255,209,102,0.2);border-radius:6px;">
+          <div style="color:var(--yellow);font-weight:600;margin-bottom:3px;">60fps ○ BUONO</div>
+          <div style="color:var(--muted);">Accettabile, errore max ~1.5cm.</div>
+        </div>
+        <div style="padding:8px;background:rgba(255,95,126,0.06);border:1px solid rgba(255,95,126,0.2);border-radius:6px;">
+          <div style="color:var(--red);font-weight:600;margin-bottom:3px;">30fps ✗ EVITA</div>
+          <div style="color:var(--muted);">Errore fino a 5cm. Solo se non hai alternative.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Errori comuni -->
+    <div style="background:var(--surf2);border:1px solid var(--brd);border-radius:8px;padding:14px;margin-bottom:18px;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:0.62rem;color:var(--red);letter-spacing:2px;margin-bottom:10px;">⚠ ERRORI COMUNI</div>
+      <div style="font-size:0.78rem;color:var(--muted);line-height:1.9;">
+        <div>❌ Atleta che esce dal frame durante il salto</div>
+        <div>❌ Camera in mano che si muove — usa treppiede o appoggiala</div>
+        <div>❌ Più persone nel frame — inquadra solo l'atleta</div>
+        <div>❌ Controluce o luce scarsa — illuminazione uniforme</div>
+        <div>❌ Iniziare il video già durante la rincorsa — parti sempre da fermo</div>
+      </div>
+    </div>
+
+    <button class="btn btn-primary btn-full" onclick="closeModal('guideModal')">✓ HO CAPITO</button>
+  </div>
+</div>
+
+<!-- ═══ SCRIPTS ═══ -->
+<script src="js/db.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/nav.js"></script>
+<script src="js/athletes.js"></script>
+<script src="js/analysis.js"></script>
+<script src="js/compare.js"></script>
+<script src="js/ranking.js"></script>
+<script src="js/training.js"></script>
+<script src="js/pdf.js"></script>
+<script src="js/timer.js"></script>
+<script src="js/settings.js"></script>
+<script>
+  renderAthletes();
+  applyClubBranding();
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+</script>
+</body>
+</html>

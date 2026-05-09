@@ -1,0 +1,50 @@
+# ══════════════════════════════════════════════════════════
+# netlify.toml — Configurazione deploy VBJump Pro
+# ══════════════════════════════════════════════════════════
+
+[build]
+  # Cartella da pubblicare (tutti i file dentro vbjump/)
+  publish = "."
+
+# ── Cache ottimizzata per PWA ──────────────────────────────
+
+# Service worker: NESSUNA cache — deve sempre essere fresco
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
+
+# HTML: nessuna cache — così l'app si aggiorna subito
+[[headers]]
+  for = "/*.html"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
+
+# JS e CSS: cache lunga (1 anno) — cambiano solo se cambi i file
+[[headers]]
+  for = "/js/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/css/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# Icone e assets: cache media (1 mese)
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=2592000"
+
+# Manifest PWA: nessuna cache
+[[headers]]
+  for = "/manifest.json"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
+
+# ── Redirect: tutto punta a index.html (SPA) ──────────────
+[[redirects]]
+  from = "/*"
+  to   = "/index.html"
+  status = 200
