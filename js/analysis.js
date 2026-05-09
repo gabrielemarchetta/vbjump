@@ -80,10 +80,10 @@ dz.addEventListener('drop', e => {
 
 function handleFile(file) {
   if (!file) return;
+  resetState();
   videoEl.src = URL.createObjectURL(file);
   document.getElementById('uploadWrap').style.display = 'none';
   document.getElementById('videoWrap').style.display  = 'block';
-  resetState();
   setStatus('Video caricato. Seleziona il framerate e premi AVVIA.', '');
 }
 
@@ -628,6 +628,12 @@ function resetState() {
   flightStartTime=null; lastFlightMs=0; maxFlightMs=0; lastApproachSpd=0;
   AIR_THRESH=AIR_THRESH_INIT;
   cmPerNormUnit=null; refPoint1=null; refPoint2=null; refCalibMode=false;
+  // Rimuovi listener calibrazione se attivi
+  if (canvas) {
+    canvas.style.cursor='';
+    canvas.removeEventListener('click', onCanvasCalibClick);
+    canvas.removeEventListener('touchend', onCanvasTouchCalib);
+  }
   jumpHistory=[]; jumpListData=[]; frameCount=0;
   document.getElementById('jumpList').innerHTML =
     '<div style="text-align:center;padding:16px;font-family:\'JetBrains Mono\',monospace;font-size:0.65rem;color:var(--muted);">Nessun salto ancora</div>';
