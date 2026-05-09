@@ -1,7 +1,5 @@
 // ══════════════════════════════════════════════════════════
-// analysis.js — VBJump Pro v6
-// Metodo: picco pixel calibrato con altezza atleta reale
-// + fattore correzione manuale per calibrazione fine
+// analysis.js — VBJump Pro — versione stabile
 // ══════════════════════════════════════════════════════════
 
 const videoEl  = document.getElementById('videoEl');
@@ -12,46 +10,37 @@ const chartCtx = chartC.getContext('2d');
 
 let pose = null, poseLoaded = false, analyzing = false, rafId = null;
 let frameCount = 0;
-
-// ── Slow-mo factor (impostato dal selettore UI) ───────────
 let slowMoFactor = 1.0;
-
-// ── Fattore correzione manuale ────────────────────────────
 let correctionFactor = 1.0;
 
-// ── Calibrazione oggetto di riferimento ──────────────────
-// L'utente tocca top e bottom di un oggetto di misura nota nel video.
-// Il sistema calcola cmPerPixel e usa quello per tutti i salti.
-let refCalibMode    = false;  // true quando si sta calibrando
-let refPoint1       = null;   // primo tocco (top oggetto)
-let refPoint2       = null;   // secondo tocco (bottom oggetto)
-let cmPerNormUnit   = null;   // cm per unità normalizzata (calibrato)
-let refObjectCm     = 100;    // misura oggetto in cm (impostata dall'utente)
+// ── Calibrazione oggetto riferimento ─────────────────────
+let refCalibMode  = false;
+let refPoint1     = null;
+let refPoint2     = null;
+let cmPerNormUnit = null;
+let refObjectCm   = 100;
 
-// ── Calibrazione altezza atleta nel frame ────────────────
-// Durante i primi BL_FRAMES misuriamo quanto spazio occupa
-// l'atleta in pixel normalizzati. Questo ci permette di
-// convertire il movimento delle anche in cm reali.
-let baselineY         = null;
-let baselineYSamples  = [];
-let baselineBuffer    = [];
-let baselineAnkleY    = null;
+// ── Baseline ─────────────────────────────────────────────
+let baselineY            = null;
+let baselineYSamples     = [];
+let baselineBuffer       = [];
+let baselineAnkleY       = null;
 let baselineAnkleSamples = [];
-let athleteHeightNorm = null; // altezza atleta in unità normalizzate
-let headYSamples      = [];   // campioni posizione testa
-let baselineHeadY     = null; // posizione testa a terra
-const BL_FRAMES       = 50;   // più frame per calibrazione più stabile
+let baselineHeadY        = null;
+let headYSamples         = [];
+let athleteHeightNorm    = null;
+const BL_FRAMES          = 50;
 
-// ── EMA smoothing ─────────────────────────────────────────
+// ── EMA ──────────────────────────────────────────────────
 let hipYSmoothed  = null;
 let headYSmoothed = null;
 const EMA_ALPHA   = 0.20;
 
 // ── Jump detection ────────────────────────────────────────
-const AIR_THRESH_INIT = 0.014;  // più sensibile per catturare decollo con rincorsa
-const AIR_THRESH_GAME = 0.010;  // mantieni rilevamento in aria
+const AIR_THRESH_INIT = 0.014;
+const AIR_THRESH_GAME = 0.010;
 let   AIR_THRESH      = AIR_THRESH_INIT;
-const MIN_AIR_FRAMES  = 2;  // ridotto per non perdere decollo durante rincorsa
+const MIN_AIR_FRAMES  = 2;
 const MIN_VIS         = 0.4;
 let lostFrames        = 0;
 const MAX_LOST        = 8;
@@ -59,32 +48,112 @@ const MAX_LOST        = 8;
 let maxJumpH = 0, curJumpH = 0, jumpPeakNorm = 0;
 let jumpCount = 0, isInAir = false, jumpAirFrames = 0;
 let jumpHistory = [], jumpListData = [];
-
-// ── Flight time (informativo) ─────────────────────────────
 let flightStartTime = null, lastFlightMs = 0, maxFlightMs = 0;
-
-// ── Approach speed ────────────────────────────────────────
 let hipXHistory = [], lastApproachSpd = 0;
 
 // ─────────────────────────────────────────────────────────
-// FILE INPUT / DRAG-DROP
+// FILE INPUT
 // ─────────────────────────────────────────────────────────
-document.getElementById('fileInput').addEventListener('change', e => handleFile(e.target.files[0]));
-const dz = document.getElementById('dropZone');
-dz.addEventListener('dragover',  e => { e.preventDefault(); dz.classList.add('drag-over'); });
-dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
-dz.addEventListener('drop', e => {
-  e.preventDefault(); dz.classList.remove('drag-over');
-  if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+document.addEventListener('DOMContentLoaded', function() {
+  const fi = document.getElementById('fileInput');
+  if (fi) fi.addEventListener('change', e => { if(e.target.files[0]) handleFile(e.target.files[0]); });
+
+  const dz = document.getElementById('dropZone');
+  if (dz) {
+    dz.addEventListener('dragover',  e => { e.preventDefault(); dz.classList.add('drag-over'); });
+    dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+    dz.addEventListener('drop', e => {
+      e.preventDefault(); dz.classList.remove('drag-over');
+      if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+    });
+  }
 });
 
 function handleFile(file) {
   if (!file) return;
+  const url = URL.createObjectURL(file);
   resetState();
-  videoEl.src = URL.createObjectURL(file);
+  videoEl.src = url;
+  videoEl.load();
   document.getElementById('uploadWrap').style.display = 'none';
   document.getElementById('videoWrap').style.display  = 'block';
-  setStatus('Video caricato. Seleziona il framerate e premi AVVIA.', '');
+  setStatus('✅ Video caricato. Seleziona framerate e premi AVVIA.', '');
+}
+
+// ─────────────────────────────────────────────────────────
+// CALIBRAZIONE OGGETTO RIFERIMENTO
+// ─────────────────────────────────────────────────────────
+function startRefCalib() {
+  if (!videoEl.src || videoEl.src === window.location.href) {
+    showToast('Carica prima un video'); return;
+  }
+  const inp = document.getElementById('refObjectCmInput');
+  refObjectCm   = inp ? (parseInt(inp.value) || 100) : 100;
+  refCalibMode  = true;
+  refPoint1     = null;
+  refPoint2     = null;
+  cmPerNormUnit = null;
+  videoEl.pause();
+  canvas.style.cursor = 'crosshair';
+  canvas.onclick      = onCanvasCalibClick;
+  canvas.ontouchend   = onCanvasTouchCalib;
+  setStatus('👆 Tocca il punto PIÙ ALTO dell\'oggetto nel video', 'run');
+  showToast('Tocca il punto più ALTO dell\'oggetto');
+}
+
+function onCanvasCalibClick(e) {
+  if (!refCalibMode) return;
+  const rect = canvas.getBoundingClientRect();
+  handleCalibPoint((e.clientY - rect.top) / rect.height);
+}
+
+function onCanvasTouchCalib(e) {
+  if (!refCalibMode) return;
+  e.preventDefault();
+  const rect  = canvas.getBoundingClientRect();
+  const touch = e.changedTouches[0];
+  handleCalibPoint((touch.clientY - rect.top) / rect.height);
+}
+
+function handleCalibPoint(yNorm) {
+  if (!refPoint1) {
+    refPoint1 = yNorm;
+    // Disegna linea punto 1
+    const y1 = yNorm * canvas.height;
+    ctx.beginPath(); ctx.strokeStyle='#00e8b0'; ctx.lineWidth=2; ctx.setLineDash([4,3]);
+    ctx.moveTo(0,y1); ctx.lineTo(canvas.width,y1); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle='#00e8b0'; ctx.font='bold 11px JetBrains Mono,monospace';
+    ctx.fillText('▲ PUNTO 1', 8, y1-5);
+    setStatus('👆 Ora tocca il punto PIÙ BASSO dell\'oggetto', 'run');
+    showToast('Tocca il punto più BASSO dell\'oggetto');
+  } else {
+    refPoint2 = yNorm;
+    const dist = Math.abs(refPoint2 - refPoint1);
+    if (dist < 0.02) {
+      showToast('❌ Punti troppo vicini, riprova');
+      refPoint1 = null; refPoint2 = null;
+      setStatus('👆 Tocca il punto PIÙ ALTO dell\'oggetto', 'run');
+      return;
+    }
+    cmPerNormUnit = refObjectCm / dist;
+    refCalibMode  = false;
+    canvas.style.cursor = '';
+    canvas.onclick    = null;
+    canvas.ontouchend = null;
+    const dispEl = document.getElementById('calibScaleDisplay');
+    if (dispEl) dispEl.textContent = `✓ ${refObjectCm}cm calibrati`;
+    setStatus(`✅ Calibrato! Scala: ${cmPerNormUnit.toFixed(0)} cm/unità`, 'ok');
+    showToast(`✅ Calibrazione OK! ${refObjectCm}cm rilevati`);
+    if (navigator.vibrate) navigator.vibrate([100,50,100]);
+  }
+}
+
+function resetRefCalib() {
+  cmPerNormUnit = null; refPoint1 = null; refPoint2 = null; refCalibMode = false;
+  canvas.style.cursor = ''; canvas.onclick = null; canvas.ontouchend = null;
+  const d = document.getElementById('calibScaleDisplay');
+  if (d) d.textContent = 'non calibrato';
+  showToast('Calibrazione resettata');
 }
 
 // ─────────────────────────────────────────────────────────
@@ -97,99 +166,8 @@ function setSlowMoFactor() {
 
 function setCorrectionFactor(val) {
   correctionFactor = parseFloat(val) || 1.0;
-  document.getElementById('corrFactorDisplay').textContent =
-    'fattore ×' + correctionFactor.toFixed(2);
-}
-
-// ─────────────────────────────────────────────────────────
-// CALIBRAZIONE OGGETTO RIFERIMENTO
-// ─────────────────────────────────────────────────────────
-function startRefCalib() {
-  if (!videoEl.src) { showToast('Carica prima un video'); return; }
-  const cmInput = document.getElementById('refObjectCmInput');
-  refObjectCm = cmInput ? parseInt(cmInput.value) || 100 : 100;
-  refCalibMode = true;
-  refPoint1 = null;
-  refPoint2 = null;
-  cmPerNormUnit = null;
-  setStatus('👆 Tocca il TOP dell'oggetto nel video (es. cima cono/rete)', 'run');
-  showToast('Tocca il punto più ALTO dell'oggetto nel video');
-  // Aggiungi listener tocco sul canvas
-  canvas.style.cursor = 'crosshair';
-  canvas.addEventListener('click', onCanvasCalibClick);
-  canvas.addEventListener('touchend', onCanvasTouchCalib);
-}
-
-function onCanvasCalibClick(e) {
-  const rect = canvas.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
-  handleCalibPoint(y / rect.height); // normalizzato 0-1
-}
-
-function onCanvasTouchCalib(e) {
-  e.preventDefault();
-  const rect = canvas.getBoundingClientRect();
-  const touch = e.changedTouches[0];
-  const y = touch.clientY - rect.top;
-  handleCalibPoint(y / rect.height);
-}
-
-function handleCalibPoint(yNorm) {
-  if (!refCalibMode) return;
-  if (!refPoint1) {
-    refPoint1 = yNorm;
-    setStatus('👆 Tocca il BOTTOM dell'oggetto (es. base cono/piede rete)', 'run');
-    showToast('Ora tocca il punto più BASSO dell'oggetto');
-    // Disegna marker punto 1
-    drawCalibMarker(refPoint1, '#00e8b0', '1');
-  } else if (!refPoint2) {
-    refPoint2 = yNorm;
-    // Calcola cm per unità normalizzata
-    const pixelDist = Math.abs(refPoint2 - refPoint1);
-    if (pixelDist < 0.01) {
-      showToast('❌ Punti troppo vicini, riprova');
-      refPoint1 = null; refPoint2 = null;
-      setStatus('👆 Tocca il TOP dell'oggetto', 'run');
-      return;
-    }
-    cmPerNormUnit = refObjectCm / pixelDist;
-    refCalibMode = false;
-    canvas.style.cursor = '';
-    canvas.removeEventListener('click', onCanvasCalibClick);
-    canvas.removeEventListener('touchend', onCanvasTouchCalib);
-    setStatus(`✅ Calibrato: ${refObjectCm}cm = ${pixelDist.toFixed(3)} unità → ${cmPerNormUnit.toFixed(0)} cm/unit`, 'ok');
-    showToast(`✅ Calibrazione OK! Oggetto ${refObjectCm}cm rilevato`);
-    // Aggiorna display
-    const dispEl = document.getElementById('calibScaleDisplay');
-    if (dispEl) dispEl.textContent = `scala: ${cmPerNormUnit.toFixed(0)} cm/unit`;
-    if (navigator.vibrate) navigator.vibrate([100,50,100]);
-  }
-}
-
-function drawCalibMarker(yNorm, color, label) {
-  const y = yNorm * canvas.height;
-  ctx.beginPath();
-  ctx.setLineDash([4,3]);
-  ctx.strokeStyle = color; ctx.lineWidth = 2;
-  ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.beginPath(); ctx.arc(20, y, 8, 0, Math.PI*2);
-  ctx.fillStyle = color; ctx.fill();
-  ctx.fillStyle = '#07080d'; ctx.font = 'bold 10px JetBrains Mono,monospace';
-  ctx.textAlign = 'center'; ctx.fillText(label, 20, y+3);
-  ctx.textAlign = 'left';
-}
-
-function resetRefCalib() {
-  cmPerNormUnit = null; refPoint1 = null; refPoint2 = null; refCalibMode = false;
-  canvas.style.cursor = '';
-  canvas.removeEventListener('click', onCanvasCalibClick);
-  canvas.removeEventListener('touchend', onCanvasTouchCalib);
-  const dispEl = document.getElementById('calibScaleDisplay');
-  if (dispEl) dispEl.textContent = 'non calibrato';
-  setStatus('Calibrazione reset. Puoi ricalibrare.', '');
-  showToast('Calibrazione resettata');
+  const d = document.getElementById('corrFactorDisplay');
+  if (d) d.textContent = 'fattore ×' + correctionFactor.toFixed(2);
 }
 
 async function startAnalysis() {
@@ -197,14 +175,12 @@ async function startAnalysis() {
   await loadMP();
   resetState();
   setSlowMoFactor();
-  correctionFactor = parseFloat(
-    document.getElementById('corrFactorInput')?.value || '1.0'
-  ) || 1.0;
+  correctionFactor = parseFloat(document.getElementById('corrFactorInput')?.value || '1.0') || 1.0;
   resetCalibrationBar();
   analyzing = true;
   videoEl.currentTime = 0;
   document.getElementById('analyzeBtn').disabled = true;
-  setStatus('⏳ Calibrazione in corso — atleta fermo nel frame...', 'run');
+  setStatus('⏳ Calibrazione — mantieni l\'atleta fermo nel frame...', 'run');
   document.getElementById('dot2').classList.add('live');
   videoEl.play();
   processFrame();
@@ -226,12 +202,10 @@ function onPoseResults(results) {
   canvas.height = videoEl.videoHeight || 360;
   chartC.width  = chartC.offsetWidth;
   chartC.height = chartC.offsetHeight;
-
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
   frameCount++;
 
-  // ── No skeleton ──────────────────────────────────────
   if (!results.poseLandmarks) {
     lostFrames++;
     if (lostFrames > MAX_LOST && isInAir) _landingDetected();
@@ -247,79 +221,51 @@ function onPoseResults(results) {
   if (vis < MIN_VIS) {
     lostFrames++;
     if (lostFrames > MAX_LOST && isInAir) _landingDetected();
-    if (lostFrames > 45 && baselineY !== null) {
-      baselineBuffer = []; baselineAnkleSamples = []; hipYSmoothed = null;
-    }
     if (window.drawConnectors && window.POSE_CONNECTIONS)
-      drawConnectors(ctx, lm, POSE_CONNECTIONS, { color: 'rgba(100,100,120,0.25)', lineWidth: 1 });
+      drawConnectors(ctx, lm, POSE_CONNECTIONS, { color:'rgba(100,100,120,0.25)', lineWidth:1 });
     drawHUD(0.5, 0.5, curJumpH, false, false, '⚠ ATLETA PARZIALMENTE VISIBILE');
     return;
   }
 
   lostFrames = 0;
 
-  // ── Skeleton ─────────────────────────────────────────
   if (window.drawConnectors && window.POSE_CONNECTIONS) {
-    drawConnectors(ctx, lm, POSE_CONNECTIONS, { color: 'rgba(79,142,255,0.6)', lineWidth: 2 });
-    drawLandmarks(ctx, lm, { color: '#ff5f7e', fillColor: 'rgba(255,95,126,0.3)', lineWidth: 1, radius: 3 });
+    drawConnectors(ctx, lm, POSE_CONNECTIONS, { color:'rgba(79,142,255,0.6)', lineWidth:2 });
+    drawLandmarks(ctx, lm, { color:'#ff5f7e', fillColor:'rgba(255,95,126,0.3)', lineWidth:1, radius:3 });
     [lm[27], lm[28]].forEach(a => {
       ctx.beginPath();
-      ctx.arc(a.x * canvas.width, a.y * canvas.height, 6, 0, Math.PI * 2);
+      ctx.arc(a.x*canvas.width, a.y*canvas.height, 6, 0, Math.PI*2);
       ctx.fillStyle = isInAir ? 'rgba(255,209,102,0.9)' : 'rgba(0,232,176,0.9)';
       ctx.fill();
     });
   }
 
-  // ── EMA smoothing anche ───────────────────────────────
   const rawHipY = (lH.y + rH.y) / 2;
   const rawHipX = (lH.x + rH.x) / 2;
-  hipYSmoothed  = hipYSmoothed === null
-    ? rawHipY : EMA_ALPHA * rawHipY + (1 - EMA_ALPHA) * hipYSmoothed;
-  const hipY = hipYSmoothed;
-  const hipX = rawHipX;
+  hipYSmoothed  = hipYSmoothed === null ? rawHipY : EMA_ALPHA*rawHipY + (1-EMA_ALPHA)*hipYSmoothed;
+  const hipY = hipYSmoothed, hipX = rawHipX;
 
-  // ── Testa (punto 0 = naso, punto 7 = orecchio sx) ────
-  const headRaw = (lm[0].y + lm[7].y + lm[8].y) / 3;
-  headYSmoothed = headYSmoothed === null
-    ? headRaw : EMA_ALPHA * headRaw + (1 - EMA_ALPHA) * headYSmoothed;
-
-  // ── Caviglie ──────────────────────────────────────────
   const lA = lm[27], rA = lm[28];
   const ankleY   = (lA.y + rA.y) / 2;
   const ankleVis = (lA.visibility + rA.visibility) / 2;
 
-  // ── Approch speed buffer ──────────────────────────────
-  hipXHistory.push({ x: hipX, t: videoEl.currentTime });
+  hipXHistory.push({ x:hipX, t:videoEl.currentTime });
   hipXHistory = hipXHistory.filter(p => videoEl.currentTime - p.t <= 2.0);
 
   // ── CALIBRAZIONE ─────────────────────────────────────
   if (baselineYSamples.length < BL_FRAMES) {
     baselineYSamples.push(hipY);
-    headYSamples.push(headYSmoothed);
     if (ankleVis > 0.4) baselineAnkleSamples.push(ankleY);
-
     const pct = Math.round((baselineYSamples.length / BL_FRAMES) * 100);
-
     if (baselineYSamples.length === BL_FRAMES) {
-      // Anche: 55° percentile
-      const sH = [...baselineYSamples].sort((a,b)=>a-b);
-      baselineY = sH[Math.floor(sH.length * 0.55)];
+      const s = [...baselineYSamples].sort((a,b)=>a-b);
+      baselineY      = s[Math.floor(s.length * 0.55)];
       baselineBuffer = [...baselineYSamples];
-
-      // Testa: 45° percentile (più in alto nel frame)
-      const sT = [...headYSamples].sort((a,b)=>a-b);
-      baselineHeadY = sT[Math.floor(sT.length * 0.45)];
-
-      // Altezza atleta in unità normalizzate = distanza testa-piedi
-      // Usiamo testa (y min) e caviglie (y max)
       if (baselineAnkleSamples.length > 10) {
-        const sA = [...baselineAnkleSamples].sort((a,b)=>a-b);
-        baselineAnkleY = sA[Math.floor(sA.length * 0.70)];
-        // athleteHeightNorm = distanza verticale testa→caviglie nel frame
-        athleteHeightNorm = baselineAnkleY - baselineHeadY;
+        const sa = [...baselineAnkleSamples].sort((a,b)=>a-b);
+        baselineAnkleY = sa[Math.floor(sa.length * 0.70)];
       }
-
-      setStatus('✅ Calibrazione completata! Pronto per il salto.', 'ok');
+      setStatus('✅ Calibrazione OK! Pronto per il salto.', 'ok');
       showCalibrationBanner();
     } else {
       setStatus(`⏳ Calibrazione ${pct}% — atleta fermo nel frame...`, 'run');
@@ -331,8 +277,7 @@ function onPoseResults(results) {
 
   // ── ADAPTIVE BASELINE ─────────────────────────────────
   if (frameCount % 8 === 0 && !isInAir) {
-    const elevCheck = baselineY - hipY;
-    if (elevCheck < AIR_THRESH * 0.5) {
+    if (baselineY - hipY < AIR_THRESH * 0.5) {
       baselineBuffer.push(hipY);
       if (baselineBuffer.length > 90) baselineBuffer.shift();
       const sorted = [...baselineBuffer].sort((a,b)=>a-b);
@@ -346,31 +291,24 @@ function onPoseResults(results) {
     }
   }
 
-  // ── CALCOLO ELEVAZIONE ───────────────────────────────
   const elevNorm = baselineY - hipY;
 
-  // ── CALCOLO CM PER UNITÀ NORMALIZZATA ───────────────
-  // Priorità:
-  // 1. Calibrazione oggetto riferimento (più precisa, indipendente dalla distanza)
-  // 2. Altezza atleta dal profilo con HIP_RATIO anatomico (fallback)
-  let scaleToUse;
+  // ── SCALA: oggetto riferimento ha priorità, poi altezza atleta ──
+  let scale;
   if (cmPerNormUnit !== null) {
-    // Calibrazione oggetto: cmPerNormUnit è già in cm/unit
-    scaleToUse = cmPerNormUnit;
+    scale = cmPerNormUnit;
   } else {
-    // Fallback: usa altezza atleta dal profilo
-    const athId       = document.getElementById('sessionAthlete').value;
-    const ath         = athId ? getAthleteById(athId) : null;
-    const athHeightCm = (ath && ath.height) ? parseInt(ath.height) : 180;
-    const HIP_RATIO   = 0.52;
-    scaleToUse = athHeightCm / HIP_RATIO;
+    const athId = document.getElementById('sessionAthlete').value;
+    const ath   = athId ? getAthleteById(athId) : null;
+    const athH  = (ath && ath.height) ? parseInt(ath.height) : 180;
+    scale = athH / 0.52;
   }
-  const elevCm = Math.max(0, elevNorm * scaleToUse * correctionFactor);
-  curJumpH = Math.round(elevCm);
+
+  curJumpH = Math.max(0, Math.round(elevNorm * scale * correctionFactor));
 
   // ── JUMP DETECTION ────────────────────────────────────
   const ankleOnGround = baselineAnkleY !== null && ankleVis > 0.3
-    && (ankleY >= baselineAnkleY - 0.018);
+    && ankleY >= baselineAnkleY - 0.018;
 
   if (elevNorm > AIR_THRESH && !ankleOnGround) {
     if (!isInAir) {
@@ -380,19 +318,18 @@ function onPoseResults(results) {
         jumpPeakNorm    = 0;
         flightStartTime = videoEl.currentTime;
         AIR_THRESH      = AIR_THRESH_GAME;
-
         const now = videoEl.currentTime;
-        const w05 = hipXHistory.filter(p => now - p.t <= 0.6 && now - p.t > 0.05);
+        const w05 = hipXHistory.filter(p => now-p.t<=0.6 && now-p.t>0.05);
         if (w05.length >= 2) {
           const dx = Math.abs(w05[w05.length-1].x - w05[0].x) * 4.0;
           const dt = (w05[w05.length-1].t - w05[0].t) * slowMoFactor;
-          if (dt > 0) lastApproachSpd = Math.round(dx / dt * 10) / 10;
+          if (dt > 0) lastApproachSpd = Math.round(dx/dt*10)/10;
         }
       }
     }
     if (isInAir) jumpPeakNorm = Math.max(jumpPeakNorm, elevNorm);
   } else {
-    jumpAirFrames = 0;  // reset immediato all'atterraggio
+    jumpAirFrames = 0;
     if (isInAir) _landingDetected();
   }
 
@@ -407,120 +344,105 @@ function onPoseResults(results) {
 
   const hasAth = document.getElementById('sessionAthlete').value;
   document.getElementById('saveBtn').disabled = !(hasAth && jumpListData.length);
-  const waBtn = document.getElementById('waBtn');
-  if (waBtn) waBtn.disabled = !jumpListData.length;
+  const wb = document.getElementById('waBtn');
+  if (wb) wb.disabled = !jumpListData.length;
 }
 
 // ─────────────────────────────────────────────────────────
-// LANDING — usa picco elevazione in cm (pixel calibrato)
+// LANDING
 // ─────────────────────────────────────────────────────────
 function _landingDetected() {
-  if (!isInAir || jumpPeakNorm <= 0) {
-    isInAir = false; jumpAirFrames = 0; return;
-  }
+  if (!isInAir || jumpPeakNorm <= 0) { isInAir=false; jumpAirFrames=0; return; }
 
-  // Stessa scala usata in onPoseResults
-  let scaleToUse2;
+  let scale;
   if (cmPerNormUnit !== null) {
-    scaleToUse2 = cmPerNormUnit;
+    scale = cmPerNormUnit;
   } else {
-    const athId2      = document.getElementById('sessionAthlete').value;
-    const ath2        = athId2 ? getAthleteById(athId2) : null;
-    const athH2       = (ath2 && ath2.height) ? parseInt(ath2.height) : 180;
-    scaleToUse2 = athH2 / 0.52;
+    const athId = document.getElementById('sessionAthlete').value;
+    const ath   = athId ? getAthleteById(athId) : null;
+    const athH  = (ath && ath.height) ? parseInt(ath.height) : 180;
+    scale = athH / 0.52;
   }
-  const heightCm = Math.round(jumpPeakNorm * scaleToUse2 * correctionFactor);
 
-  // Tempo di volo (informativo, con correzione slowMo)
+  const heightCm = Math.round(jumpPeakNorm * scale * correctionFactor);
+
   if (flightStartTime !== null) {
-    const videoFlightSec = videoEl.currentTime - flightStartTime;
-    const realFlightSec  = videoFlightSec / slowMoFactor;
-    lastFlightMs = Math.round(realFlightSec * 1000);
+    const flightSec = (videoEl.currentTime - flightStartTime) / slowMoFactor;
+    lastFlightMs = Math.round(flightSec * 1000);
     if (lastFlightMs > maxFlightMs) maxFlightMs = lastFlightMs;
     flightStartTime = null;
   }
 
-  // Sanity check
-  if (heightCm < 5 || heightCm > 120) {
-    isInAir = false; jumpAirFrames = 0; jumpPeakNorm = 0; return;
-  }
+  if (heightCm < 5 || heightCm > 120) { isInAir=false; jumpAirFrames=0; jumpPeakNorm=0; return; }
 
   jumpCount++;
   jumpListData.push(heightCm);
   if (heightCm > maxJumpH) maxJumpH = heightCm;
   curJumpH = heightCm;
-
-  addJumpItem(heightCm, heightCm === maxJumpH, lastFlightMs, lastApproachSpd);
-  isInAir = false; jumpAirFrames = 0; jumpPeakNorm = 0;
+  addJumpItem(heightCm, heightCm===maxJumpH, lastFlightMs, lastApproachSpd);
+  isInAir=false; jumpAirFrames=0; jumpPeakNorm=0;
 }
 
 function _resetBaseline() {
-  baselineY = null; baselineYSamples = []; baselineBuffer = [];
-  baselineAnkleY = null; baselineAnkleSamples = [];
-  baselineHeadY = null; headYSamples = []; athleteHeightNorm = null;
-  hipYSmoothed = null; headYSmoothed = null;
-  setStatus('⚠ Atleta uscito — ricalibrazione in corso...', 'run');
+  baselineY=null; baselineYSamples=[]; baselineBuffer=[];
+  baselineAnkleY=null; baselineAnkleSamples=[];
+  baselineHeadY=null; headYSamples=[]; athleteHeightNorm=null;
+  hipYSmoothed=null; headYSmoothed=null;
+  setStatus('⚠ Atleta uscito — ricalibrazione...', 'run');
 }
 
 // ─────────────────────────────────────────────────────────
 // DRAWING
 // ─────────────────────────────────────────────────────────
 function drawHUD(hipX, hipY, elev, calib, noSkeleton, warning) {
-  const cx = hipX * canvas.width, cy = hipY * canvas.height;
-
+  const cx = hipX*canvas.width, cy = hipY*canvas.height;
   if (baselineY !== null && !noSkeleton) {
-    const by = baselineY * canvas.height;
+    const by = baselineY*canvas.height;
     ctx.beginPath(); ctx.setLineDash([5,4]);
-    ctx.strokeStyle = 'rgba(79,142,255,0.4)'; ctx.lineWidth = 1.5;
-    ctx.moveTo(0, by); ctx.lineTo(canvas.width, by); ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.fillStyle = 'rgba(79,142,255,0.6)'; ctx.font = '8px JetBrains Mono,monospace';
-    ctx.fillText('BASELINE ANCHE', 4, by - 4);
-
+    ctx.strokeStyle='rgba(79,142,255,0.4)'; ctx.lineWidth=1.5;
+    ctx.moveTo(0,by); ctx.lineTo(canvas.width,by); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle='rgba(79,142,255,0.6)'; ctx.font='8px JetBrains Mono,monospace';
+    ctx.fillText('BASELINE', 4, by-4);
     if (cy < by && isInAir) {
-      ctx.beginPath(); ctx.strokeStyle = '#00e8b0'; ctx.lineWidth = 3;
-      ctx.moveTo(cx, by); ctx.lineTo(cx, cy); ctx.stroke();
-      ctx.beginPath(); ctx.fillStyle = '#00e8b0';
-      ctx.moveTo(cx, cy-9); ctx.lineTo(cx-6, cy+4); ctx.lineTo(cx+6, cy+4); ctx.fill();
-      ctx.fillStyle = '#00e8b0'; ctx.font = 'bold 12px JetBrains Mono,monospace';
-      ctx.fillText(elev + 'cm', cx + 10, cy + 4);
+      ctx.beginPath(); ctx.strokeStyle='#00e8b0'; ctx.lineWidth=3;
+      ctx.moveTo(cx,by); ctx.lineTo(cx,cy); ctx.stroke();
+      ctx.beginPath(); ctx.fillStyle='#00e8b0';
+      ctx.moveTo(cx,cy-9); ctx.lineTo(cx-6,cy+4); ctx.lineTo(cx+6,cy+4); ctx.fill();
+      ctx.fillStyle='#00e8b0'; ctx.font='bold 12px JetBrains Mono,monospace';
+      ctx.fillText(elev+'cm', cx+10, cy+4);
     }
   }
-
   const boxH = warning ? 62 : 52;
-  ctx.fillStyle = 'rgba(7,8,13,0.85)'; ctx.fillRect(8, 8, 240, boxH);
-  ctx.strokeStyle = calib ? '#ffd166' : noSkeleton ? '#ff5f7e' : '#4f8eff';
-  ctx.lineWidth = 1; ctx.strokeRect(8, 8, 240, boxH);
-
-  ctx.font = 'bold 10px JetBrains Mono,monospace';
+  ctx.fillStyle='rgba(7,8,13,0.85)'; ctx.fillRect(8,8,240,boxH);
+  ctx.strokeStyle = calib?'#ffd166':noSkeleton?'#ff5f7e':'#4f8eff';
+  ctx.lineWidth=1; ctx.strokeRect(8,8,240,boxH);
+  ctx.font='bold 10px JetBrains Mono,monospace';
   if (calib) {
-    ctx.fillStyle = '#ffd166'; ctx.fillText('CALIBRAZIONE IN CORSO...', 18, 28);
+    ctx.fillStyle='#ffd166'; ctx.fillText('CALIBRAZIONE...', 18, 28);
   } else if (noSkeleton) {
-    ctx.fillStyle = '#ff5f7e'; ctx.fillText('⚠ ATLETA NON RILEVATO', 18, 28);
+    ctx.fillStyle='#ff5f7e'; ctx.fillText('⚠ ATLETA NON RILEVATO', 18, 28);
   } else {
-    ctx.fillStyle = isInAir ? '#00e8b0' : '#4f8eff';
-    ctx.fillText(isInAir ? '▲ IN ARIA — ' + elev + ' cm' : '● A TERRA', 18, 28);
+    ctx.fillStyle = isInAir?'#00e8b0':'#4f8eff';
+    ctx.fillText(isInAir?'▲ IN ARIA — '+elev+' cm':'● A TERRA', 18, 28);
   }
-
-  const calOk = athleteHeightNorm ? '✓ cal' : '⏳ cal';
-  ctx.fillStyle = '#4a5080'; ctx.font = '9px JetBrains Mono,monospace';
-  ctx.fillText(`SALTI:${jumpCount}  MAX:${maxJumpH}cm  VOLO:${lastFlightMs||'--'}ms  ${calOk}`, 18, 44);
-
+  const calOk = cmPerNormUnit ? `✓ ref ${Math.round(cmPerNormUnit)}` : 'no ref';
+  ctx.fillStyle='#4a5080'; ctx.font='9px JetBrains Mono,monospace';
+  ctx.fillText(`SALTI:${jumpCount}  MAX:${maxJumpH}cm  ${calOk}`, 18, 44);
   if (warning) {
-    ctx.fillStyle = '#ffd166'; ctx.font = '8px JetBrains Mono,monospace';
+    ctx.fillStyle='#ffd166'; ctx.font='8px JetBrains Mono,monospace';
     ctx.fillText(warning, 18, 58);
   }
 }
 
 function drawChart() {
-  const w = chartC.width, h = chartC.height;
+  const w=chartC.width, h=chartC.height;
   chartCtx.clearRect(0,0,w,h);
   if (jumpHistory.length < 2) return;
-  const max = Math.max(...jumpHistory, 10), step = w/(jumpHistory.length-1);
-  const grad = chartCtx.createLinearGradient(0,0,0,h);
+  const max=Math.max(...jumpHistory,10), step=w/(jumpHistory.length-1);
+  const grad=chartCtx.createLinearGradient(0,0,0,h);
   grad.addColorStop(0,'rgba(79,142,255,0.3)'); grad.addColorStop(1,'rgba(79,142,255,0)');
   chartCtx.beginPath(); chartCtx.moveTo(0,h);
-  jumpHistory.forEach((v,i) => chartCtx.lineTo(i*step, h-(v/max)*(h-6)));
+  jumpHistory.forEach((v,i)=>chartCtx.lineTo(i*step,h-(v/max)*(h-6)));
   chartCtx.lineTo(w,h); chartCtx.closePath(); chartCtx.fillStyle=grad; chartCtx.fill();
   chartCtx.beginPath(); chartCtx.strokeStyle='#4f8eff'; chartCtx.lineWidth=1.5;
   jumpHistory.forEach((v,i)=>{ const x=i*step,y=h-(v/max)*(h-6); i===0?chartCtx.moveTo(x,y):chartCtx.lineTo(x,y); });
@@ -531,8 +453,7 @@ function drawChart() {
 // STATS
 // ─────────────────────────────────────────────────────────
 function updateStats() {
-  const avg = jumpListData.length
-    ? Math.round(jumpListData.reduce((a,b)=>a+b,0)/jumpListData.length) : null;
+  const avg = jumpListData.length ? Math.round(jumpListData.reduce((a,b)=>a+b,0)/jumpListData.length) : null;
   document.getElementById('maxJump').innerHTML    = (maxJumpH||'--')+'<span class="st-unit">cm</span>';
   document.getElementById('curJump').innerHTML    = (curJumpH||'--')+'<span class="st-unit">cm</span>';
   document.getElementById('jumpCount').textContent = jumpCount;
@@ -544,22 +465,22 @@ function updateStats() {
   document.getElementById('curBadge').textContent  = isInAir ? '🔴 IN ARIA' : '⚫ A TERRA';
   if (lastFlightMs) document.getElementById('flightSub').textContent = `max: ${maxFlightMs}ms`;
   if (lastApproachSpd) document.getElementById('approachSub').textContent = lastApproachSpd>3?'🔥 Esplosiva':'💨 Moderata';
-  if (jumpListData.length >= 4) {
-    const half = Math.floor(jumpListData.length/2);
-    const a1 = jumpListData.slice(0,half).reduce((a,b)=>a+b,0)/half;
-    const a2 = jumpListData.slice(half).reduce((a,b)=>a+b,0)/(jumpListData.length-half);
-    const drop = Math.round(a1-a2);
-    const fb = document.getElementById('fatigueBadge');
-    if (fb) fb.textContent = drop>=3?`⚠ calo ${drop}cm`:drop<=-2?`✓ +${Math.abs(drop)}cm`:'sessione';
+  if (jumpListData.length>=4) {
+    const half=Math.floor(jumpListData.length/2);
+    const a1=jumpListData.slice(0,half).reduce((a,b)=>a+b,0)/half;
+    const a2=jumpListData.slice(half).reduce((a,b)=>a+b,0)/(jumpListData.length-half);
+    const drop=Math.round(a1-a2);
+    const fb=document.getElementById('fatigueBadge');
+    if(fb) fb.textContent=drop>=3?`⚠ calo ${drop}cm`:drop<=-2?`✓ +${Math.abs(drop)}cm`:'sessione';
   }
 }
 
 function addJumpItem(h, best, flightMs, approachSpd) {
-  const list = document.getElementById('jumpList');
-  const ph = list.querySelector('div:not(.jitem)'); if (ph) ph.remove();
-  const el = document.createElement('div');
-  el.className = 'jitem'+(best?' best':'');
-  el.innerHTML = `
+  const list=document.getElementById('jumpList');
+  const ph=list.querySelector('div:not(.jitem)'); if(ph) ph.remove();
+  const el=document.createElement('div');
+  el.className='jitem'+(best?' best':'');
+  el.innerHTML=`
     <div>
       <span class="j-num">SALTO #${jumpCount}</span>
       <div style="font-family:'JetBrains Mono',monospace;font-size:0.55rem;color:var(--muted);margin-top:2px;">
@@ -577,33 +498,32 @@ function addJumpItem(h, best, flightMs, approachSpd) {
 // SESSION / WHATSAPP
 // ─────────────────────────────────────────────────────────
 function saveSession() {
-  const athId = document.getElementById('sessionAthlete').value;
-  if (!athId || !jumpListData.length) return;
-  const avg = Math.round(jumpListData.reduce((a,b)=>a+b,0)/jumpListData.length);
+  const athId=document.getElementById('sessionAthlete').value;
+  if(!athId||!jumpListData.length) return;
+  const avg=Math.round(jumpListData.reduce((a,b)=>a+b,0)/jumpListData.length);
   addSession({
-    athleteId: athId, date: new Date().toLocaleDateString('it-IT'),
-    dateSort: Date.now(), maxHeight: maxJumpH, avgHeight: avg,
+    athleteId:athId, date:new Date().toLocaleDateString('it-IT'),
+    dateSort:Date.now(), maxHeight:maxJumpH, avgHeight:avg,
     jumpCount, maxFlightMs, lastApproachSpd,
-    note: document.getElementById('sessionNote').value||'',
-    jumps: [...jumpListData],
+    note:document.getElementById('sessionNote').value||'',
+    jumps:[...jumpListData],
   });
-  document.getElementById('saveBtn').disabled = true;
+  document.getElementById('saveBtn').disabled=true;
   showToast('✓ Sessione salvata! Max: '+maxJumpH+' cm');
 }
 
 function shareWhatsApp() {
-  const athId = document.getElementById('sessionAthlete').value;
-  const ath   = athId ? getAthleteById(athId) : null;
-  const name  = ath ? ath.name : 'Atleta';
-  const avg   = jumpListData.length
-    ? Math.round(jumpListData.reduce((a,b)=>a+b,0)/jumpListData.length) : 0;
-  const fpsLabels = {'1':'30fps','2':'60fps','4':'120fps','8':'240fps'};
-  const fpsSel    = document.getElementById('videoFpsSelect');
-  const fpsLabel  = fpsLabels[fpsSel?fpsSel.value:'1']||'';
-  const rating = maxJumpH>=60?'🏆 Eccellente':maxJumpH>=45?'✅ Buono':maxJumpH>=30?'📈 Nella media':'🔰 In sviluppo';
-  const club = JSON.parse(localStorage.getItem('vbjump_club')||'{}');
-  const clubLine = club.name?`${club.emoji||'🏐'} ${club.name}\n`:'';
-  const msg = `${clubLine}📊 *REPORT SALTO — ${name}*\n\n`
+  const athId=document.getElementById('sessionAthlete').value;
+  const ath=athId?getAthleteById(athId):null;
+  const name=ath?ath.name:'Atleta';
+  const avg=jumpListData.length?Math.round(jumpListData.reduce((a,b)=>a+b,0)/jumpListData.length):0;
+  const fpsLabels={'1':'30fps','2':'60fps','4':'120fps','8':'240fps'};
+  const fpsSel=document.getElementById('videoFpsSelect');
+  const fpsLabel=fpsLabels[fpsSel?fpsSel.value:'1']||'';
+  const rating=maxJumpH>=60?'🏆 Eccellente':maxJumpH>=45?'✅ Buono':maxJumpH>=30?'📈 Nella media':'🔰 In sviluppo';
+  const club=JSON.parse(localStorage.getItem('vbjump_club')||'{}');
+  const clubLine=club.name?`${club.emoji||'🏐'} ${club.name}\n`:'';
+  const msg=`${clubLine}📊 *REPORT SALTO — ${name}*\n\n`
     +`🔝 Elevazione max: *${maxJumpH} cm*\n`
     +`📈 Media sessione: *${avg} cm*\n`
     +`🔢 Salti analizzati: *${jumpCount}*\n`
@@ -628,42 +548,30 @@ function resetState() {
   flightStartTime=null; lastFlightMs=0; maxFlightMs=0; lastApproachSpd=0;
   AIR_THRESH=AIR_THRESH_INIT;
   cmPerNormUnit=null; refPoint1=null; refPoint2=null; refCalibMode=false;
-  // Rimuovi listener calibrazione se attivi
-  if (canvas) {
-    canvas.style.cursor='';
-    canvas.removeEventListener('click', onCanvasCalibClick);
-    canvas.removeEventListener('touchend', onCanvasTouchCalib);
-  }
+  canvas.style.cursor=''; canvas.onclick=null; canvas.ontouchend=null;
   jumpHistory=[]; jumpListData=[]; frameCount=0;
-  document.getElementById('jumpList').innerHTML =
-    '<div style="text-align:center;padding:16px;font-family:\'JetBrains Mono\',monospace;font-size:0.65rem;color:var(--muted);">Nessun salto ancora</div>';
-  ctx.clearRect(0,0,canvas.width,canvas.height);
+  const jl=document.getElementById('jumpList');
+  if(jl) jl.innerHTML='<div style="text-align:center;padding:16px;font-family:\'JetBrains Mono\',monospace;font-size:0.65rem;color:var(--muted);">Nessun salto ancora</div>';
+  if(canvas) ctx.clearRect(0,0,canvas.width,canvas.height);
   updateStats();
-  document.getElementById('saveBtn').disabled=true;
-  const wb=document.getElementById('waBtn'); if(wb) wb.disabled=true;
+  const sb=document.getElementById('saveBtn'); if(sb) sb.disabled=true;
+  const wb=document.getElementById('waBtn');   if(wb) wb.disabled=true;
 }
 
 function resetAnalysis() {
   analyzing=false; cancelAnimationFrame(rafId);
-  videoEl.pause(); videoEl.src=''; resetState();
-  // Reset input file — senza questo il browser non triggera
-  // il change event se si riseleziona lo stesso file
-  const fi = document.getElementById('fileInput');
-  if (fi) fi.value = '';
-  // Libera memoria URL oggetto
-  if (videoEl.src && videoEl.src.startsWith('blob:')) {
-    URL.revokeObjectURL(videoEl.src);
-  }
-  videoEl.src = '';
+  videoEl.pause();
+  if(videoEl.src && videoEl.src.startsWith('blob:')) URL.revokeObjectURL(videoEl.src);
+  videoEl.src='';
+  const fi=document.getElementById('fileInput'); if(fi) fi.value='';
+  resetState();
   document.getElementById('uploadWrap').style.display='block';
   document.getElementById('videoWrap').style.display='none';
   document.getElementById('analyzeBtn').disabled=false;
   document.getElementById('dot2').classList.remove('live');
-  // Reset barra calibrazione
   resetCalibrationBar();
-  // Reset slider correzione
-  const slider = document.getElementById('corrFactorInput');
-  if (slider) { slider.value = '1.0'; setCorrectionFactor('1.0'); }
+  const slider=document.getElementById('corrFactorInput');
+  if(slider){slider.value='1.0'; setCorrectionFactor('1.0');}
   setStatus('Pronto. Seleziona framerate e premi AVVIA.','');
 }
 
@@ -673,14 +581,13 @@ function finishAnalysis() {
   document.getElementById('dot2').classList.remove('live');
   const hasAth=document.getElementById('sessionAthlete').value;
   if(hasAth&&jumpListData.length) document.getElementById('saveBtn').disabled=false;
-  const wb=document.getElementById('waBtn');
-  if(wb&&jumpListData.length) wb.disabled=false;
+  const wb=document.getElementById('waBtn'); if(wb&&jumpListData.length) wb.disabled=false;
   setStatus(`✓ Analisi completata — ${jumpCount} salti, max ${maxJumpH}cm`,'ok');
 }
 
 function setStatus(msg,cls) {
   const b=document.getElementById('statusBar');
-  b.textContent=msg; b.className='status '+(cls||'');
+  if(b){b.textContent=msg; b.className='status '+(cls||'');}
 }
 
 // ─────────────────────────────────────────────────────────
