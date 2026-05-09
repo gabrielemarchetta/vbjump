@@ -94,6 +94,18 @@ function startRefCalib() {
   refPoint2     = null;
   cmPerNormUnit = null;
   videoEl.pause();
+
+  // Disegna frame corrente sul canvas — altrimenti è nero
+  canvas.width  = videoEl.videoWidth  || 640;
+  canvas.height = videoEl.videoHeight || 360;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = 'rgba(7,8,13,0.80)';
+  ctx.fillRect(8, 8, 270, 38);
+  ctx.fillStyle = '#ffd166';
+  ctx.font = 'bold 11px JetBrains Mono,monospace';
+  ctx.fillText('👆 TOCCA IL PUNTO PIÙ ALTO', 18, 31);
+
   canvas.style.cursor = 'crosshair';
   canvas.onclick      = onCanvasCalibClick;
   canvas.ontouchend   = onCanvasTouchCalib;
@@ -118,12 +130,17 @@ function onCanvasTouchCalib(e) {
 function handleCalibPoint(yNorm) {
   if (!refPoint1) {
     refPoint1 = yNorm;
-    // Disegna linea punto 1
+    // Ridisegna frame + linea punto 1
+    ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
     const y1 = yNorm * canvas.height;
     ctx.beginPath(); ctx.strokeStyle='#00e8b0'; ctx.lineWidth=2; ctx.setLineDash([4,3]);
     ctx.moveTo(0,y1); ctx.lineTo(canvas.width,y1); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle='rgba(0,232,176,0.2)'; ctx.fillRect(0,y1-2,canvas.width,4);
     ctx.fillStyle='#00e8b0'; ctx.font='bold 11px JetBrains Mono,monospace';
-    ctx.fillText('▲ PUNTO 1', 8, y1-5);
+    ctx.fillText('▲ PUNTO 1', 8, y1-6);
+    ctx.fillStyle='rgba(7,8,13,0.80)'; ctx.fillRect(8,8,270,38);
+    ctx.fillStyle='#ffd166'; ctx.font='bold 11px JetBrains Mono,monospace';
+    ctx.fillText('👆 TOCCA IL PUNTO PIÙ BASSO', 18, 31);
     setStatus('👆 Ora tocca il punto PIÙ BASSO dell\'oggetto', 'run');
     showToast('Tocca il punto più BASSO dell\'oggetto');
   } else {
@@ -132,6 +149,11 @@ function handleCalibPoint(yNorm) {
     if (dist < 0.02) {
       showToast('❌ Punti troppo vicini, riprova');
       refPoint1 = null; refPoint2 = null;
+      // Ridisegna per ricominciare
+      ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+      ctx.fillStyle='rgba(7,8,13,0.80)'; ctx.fillRect(8,8,270,38);
+      ctx.fillStyle='#ffd166'; ctx.font='bold 11px JetBrains Mono,monospace';
+      ctx.fillText('👆 TOCCA IL PUNTO PIÙ ALTO', 18, 31);
       setStatus('👆 Tocca il punto PIÙ ALTO dell\'oggetto', 'run');
       return;
     }
@@ -140,6 +162,22 @@ function handleCalibPoint(yNorm) {
     canvas.style.cursor = '';
     canvas.onclick    = null;
     canvas.ontouchend = null;
+    // Disegna linea punto 2 e conferma
+    ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+    const y1 = refPoint1 * canvas.height;
+    const y2 = yNorm * canvas.height;
+    [y1,y2].forEach((y,i) => {
+      ctx.beginPath(); ctx.strokeStyle='#00e8b0'; ctx.lineWidth=2; ctx.setLineDash([4,3]);
+      ctx.moveTo(0,y); ctx.lineTo(canvas.width,y); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle='#00e8b0'; ctx.font='bold 10px JetBrains Mono,monospace';
+      ctx.fillText(i===0?'▲ TOP':'▼ BOTTOM', 8, y+(i===0?-5:14));
+    });
+    // Freccia verticale
+    ctx.beginPath(); ctx.strokeStyle='#ffd166'; ctx.lineWidth=2;
+    ctx.moveTo(canvas.width/2, y1); ctx.lineTo(canvas.width/2, y2); ctx.stroke();
+    ctx.fillStyle='rgba(7,8,13,0.85)'; ctx.fillRect(8,8,280,38);
+    ctx.fillStyle='#00e8b0'; ctx.font='bold 11px JetBrains Mono,monospace';
+    ctx.fillText(`✅ ${refObjectCm}cm = scala ok!`, 18, 31);
     const dispEl = document.getElementById('calibScaleDisplay');
     if (dispEl) dispEl.textContent = `✓ ${refObjectCm}cm calibrati`;
     setStatus(`✅ Calibrato! Scala: ${cmPerNormUnit.toFixed(0)} cm/unità`, 'ok');
