@@ -86,6 +86,35 @@
         <div class="jump-list" id="jumpList"><div style="text-align:center;padding:16px;font-family:'JetBrains Mono',monospace;font-size:0.65rem;color:var(--muted);">Nessun salto ancora</div></div>
       </div>
     </div>
+    <!-- Card calibrazione oggetto riferimento -->
+    <div class="card" style="margin-top:10px;">
+      <div class="card-hd">
+        <span class="card-lbl">📏 OGGETTO DI RIFERIMENTO</span>
+        <span id="calibScaleDisplay" style="font-family:'JetBrains Mono',monospace;font-size:0.62rem;color:var(--muted);">non calibrato</span>
+      </div>
+      <div class="card-body" style="padding:12px 16px;">
+        <div style="font-size:0.75rem;color:var(--muted);margin-bottom:10px;line-height:1.6;">
+          Metti un oggetto di misura nota vicino all'atleta (cono, bastone, rete). Pausa il video, inserisci la misura e tocca i due estremi nel video. Calibrazione precisa per qualsiasi distanza camera.
+        </div>
+        <div class="fg-row" style="margin-bottom:10px;">
+          <div>
+            <label class="lbl">MISURA OGGETTO (cm)</label>
+            <input class="inp" id="refObjectCmInput" type="number" value="100" min="10" max="500" placeholder="es. 100">
+          </div>
+          <div style="display:flex;flex-direction:column;justify-content:flex-end;gap:6px;">
+            <button class="btn btn-primary btn-sm" onclick="startRefCalib()" style="justify-content:center;">📍 CALIBRA</button>
+            <button class="btn btn-outline btn-sm" onclick="resetRefCalib()" style="justify-content:center;">↺ RESET</button>
+          </div>
+        </div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:0.6rem;color:var(--blue);line-height:1.8;">
+          💡 Oggetti utili:<br>
+          · Rete pallavolo = 243cm<br>
+          · Cono standard = 30cm<br>
+          · Metro/bastone = qualsiasi misura nota
+        </div>
+      </div>
+    </div>
+
     <!-- Barra progresso calibrazione -->
     <div id="calibBarWrap" style="margin-bottom:8px;padding:10px 14px;
       background:rgba(0,0,0,0.3);border:1px solid var(--brd);border-radius:7px;">

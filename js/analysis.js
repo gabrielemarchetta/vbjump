@@ -17,9 +17,16 @@ let frameCount = 0;
 let slowMoFactor = 1.0;
 
 // ── Fattore correzione manuale ────────────────────────────
-// L'utente può regolarlo se i risultati sono sistematicamente
-// troppo alti o troppo bassi. Default 1.0 = nessuna correzione.
 let correctionFactor = 1.0;
+
+// ── Calibrazione oggetto di riferimento ──────────────────
+// L'utente tocca top e bottom di un oggetto di misura nota nel video.
+// Il sistema calcola cmPerPixel e usa quello per tutti i salti.
+let refCalibMode    = false;  // true quando si sta calibrando
+let refPoint1       = null;   // primo tocco (top oggetto)
+let refPoint2       = null;   // secondo tocco (bottom oggetto)
+let cmPerNormUnit   = null;   // cm per unità normalizzata (calibrato)
+let refObjectCm     = 100;    // misura oggetto in cm (impostata dall'utente)
 
 // ── Calibrazione altezza atleta nel frame ────────────────
 // Durante i primi BL_FRAMES misuriamo quanto spazio occupa
@@ -92,6 +99,97 @@ function setCorrectionFactor(val) {
   correctionFactor = parseFloat(val) || 1.0;
   document.getElementById('corrFactorDisplay').textContent =
     'fattore ×' + correctionFactor.toFixed(2);
+}
+
+// ─────────────────────────────────────────────────────────
+// CALIBRAZIONE OGGETTO RIFERIMENTO
+// ─────────────────────────────────────────────────────────
+function startRefCalib() {
+  if (!videoEl.src) { showToast('Carica prima un video'); return; }
+  const cmInput = document.getElementById('refObjectCmInput');
+  refObjectCm = cmInput ? parseInt(cmInput.value) || 100 : 100;
+  refCalibMode = true;
+  refPoint1 = null;
+  refPoint2 = null;
+  cmPerNormUnit = null;
+  setStatus('👆 Tocca il TOP dell'oggetto nel video (es. cima cono/rete)', 'run');
+  showToast('Tocca il punto più ALTO dell'oggetto nel video');
+  // Aggiungi listener tocco sul canvas
+  canvas.style.cursor = 'crosshair';
+  canvas.addEventListener('click', onCanvasCalibClick);
+  canvas.addEventListener('touchend', onCanvasTouchCalib);
+}
+
+function onCanvasCalibClick(e) {
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  handleCalibPoint(y / rect.height); // normalizzato 0-1
+}
+
+function onCanvasTouchCalib(e) {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const touch = e.changedTouches[0];
+  const y = touch.clientY - rect.top;
+  handleCalibPoint(y / rect.height);
+}
+
+function handleCalibPoint(yNorm) {
+  if (!refCalibMode) return;
+  if (!refPoint1) {
+    refPoint1 = yNorm;
+    setStatus('👆 Tocca il BOTTOM dell'oggetto (es. base cono/piede rete)', 'run');
+    showToast('Ora tocca il punto più BASSO dell'oggetto');
+    // Disegna marker punto 1
+    drawCalibMarker(refPoint1, '#00e8b0', '1');
+  } else if (!refPoint2) {
+    refPoint2 = yNorm;
+    // Calcola cm per unità normalizzata
+    const pixelDist = Math.abs(refPoint2 - refPoint1);
+    if (pixelDist < 0.01) {
+      showToast('❌ Punti troppo vicini, riprova');
+      refPoint1 = null; refPoint2 = null;
+      setStatus('👆 Tocca il TOP dell'oggetto', 'run');
+      return;
+    }
+    cmPerNormUnit = refObjectCm / pixelDist;
+    refCalibMode = false;
+    canvas.style.cursor = '';
+    canvas.removeEventListener('click', onCanvasCalibClick);
+    canvas.removeEventListener('touchend', onCanvasTouchCalib);
+    setStatus(`✅ Calibrato: ${refObjectCm}cm = ${pixelDist.toFixed(3)} unità → ${cmPerNormUnit.toFixed(0)} cm/unit`, 'ok');
+    showToast(`✅ Calibrazione OK! Oggetto ${refObjectCm}cm rilevato`);
+    // Aggiorna display
+    const dispEl = document.getElementById('calibScaleDisplay');
+    if (dispEl) dispEl.textContent = `scala: ${cmPerNormUnit.toFixed(0)} cm/unit`;
+    if (navigator.vibrate) navigator.vibrate([100,50,100]);
+  }
+}
+
+function drawCalibMarker(yNorm, color, label) {
+  const y = yNorm * canvas.height;
+  ctx.beginPath();
+  ctx.setLineDash([4,3]);
+  ctx.strokeStyle = color; ctx.lineWidth = 2;
+  ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.beginPath(); ctx.arc(20, y, 8, 0, Math.PI*2);
+  ctx.fillStyle = color; ctx.fill();
+  ctx.fillStyle = '#07080d'; ctx.font = 'bold 10px JetBrains Mono,monospace';
+  ctx.textAlign = 'center'; ctx.fillText(label, 20, y+3);
+  ctx.textAlign = 'left';
+}
+
+function resetRefCalib() {
+  cmPerNormUnit = null; refPoint1 = null; refPoint2 = null; refCalibMode = false;
+  canvas.style.cursor = '';
+  canvas.removeEventListener('click', onCanvasCalibClick);
+  canvas.removeEventListener('touchend', onCanvasTouchCalib);
+  const dispEl = document.getElementById('calibScaleDisplay');
+  if (dispEl) dispEl.textContent = 'non calibrato';
+  setStatus('Calibrazione reset. Puoi ricalibrare.', '');
+  showToast('Calibrazione resettata');
 }
 
 async function startAnalysis() {
@@ -251,24 +349,23 @@ function onPoseResults(results) {
   // ── CALCOLO ELEVAZIONE ───────────────────────────────
   const elevNorm = baselineY - hipY;
 
-  // ── FORMULA DEFINITIVA ───────────────────────────────
-  // elevCm = elevNorm * athHeightCm / HIP_RATIO
-  //
-  // HIP_RATIO = 0.52 (rapporto anatomico fisso: le anche sono
-  // sempre al 52% dell'altezza corporea per qualsiasi atleta)
-  //
-  // Questo funziona perché:
-  // - elevNorm = spostamento anche in unità normalizzate
-  // - athHeightCm / HIP_RATIO = cm reali per unità normalizzata
-  //   calibrati sull'altezza REALE dell'atleta nel profilo
-  // - Non dipende da testa/caviglie (instabili) né da distanza camera
-  //
-  // correctionFactor aggiusta distanze non standard
-  const athId       = document.getElementById('sessionAthlete').value;
-  const ath         = athId ? getAthleteById(athId) : null;
-  const athHeightCm = (ath && ath.height) ? parseInt(ath.height) : 180;
-  const HIP_RATIO   = 0.52;
-  const elevCm = Math.max(0, elevNorm * (athHeightCm / HIP_RATIO) * correctionFactor);
+  // ── CALCOLO CM PER UNITÀ NORMALIZZATA ───────────────
+  // Priorità:
+  // 1. Calibrazione oggetto riferimento (più precisa, indipendente dalla distanza)
+  // 2. Altezza atleta dal profilo con HIP_RATIO anatomico (fallback)
+  let scaleToUse;
+  if (cmPerNormUnit !== null) {
+    // Calibrazione oggetto: cmPerNormUnit è già in cm/unit
+    scaleToUse = cmPerNormUnit;
+  } else {
+    // Fallback: usa altezza atleta dal profilo
+    const athId       = document.getElementById('sessionAthlete').value;
+    const ath         = athId ? getAthleteById(athId) : null;
+    const athHeightCm = (ath && ath.height) ? parseInt(ath.height) : 180;
+    const HIP_RATIO   = 0.52;
+    scaleToUse = athHeightCm / HIP_RATIO;
+  }
+  const elevCm = Math.max(0, elevNorm * scaleToUse * correctionFactor);
   curJumpH = Math.round(elevCm);
 
   // ── JUMP DETECTION ────────────────────────────────────
@@ -322,12 +419,17 @@ function _landingDetected() {
     isInAir = false; jumpAirFrames = 0; return;
   }
 
-  // Stessa formula di onPoseResults
-  const athId2      = document.getElementById('sessionAthlete').value;
-  const ath2        = athId2 ? getAthleteById(athId2) : null;
-  const athH2       = (ath2 && ath2.height) ? parseInt(ath2.height) : 180;
-  const HIP_RATIO   = 0.52;
-  const heightCm = Math.round(jumpPeakNorm * (athH2 / HIP_RATIO) * correctionFactor);
+  // Stessa scala usata in onPoseResults
+  let scaleToUse2;
+  if (cmPerNormUnit !== null) {
+    scaleToUse2 = cmPerNormUnit;
+  } else {
+    const athId2      = document.getElementById('sessionAthlete').value;
+    const ath2        = athId2 ? getAthleteById(athId2) : null;
+    const athH2       = (ath2 && ath2.height) ? parseInt(ath2.height) : 180;
+    scaleToUse2 = athH2 / 0.52;
+  }
+  const heightCm = Math.round(jumpPeakNorm * scaleToUse2 * correctionFactor);
 
   // Tempo di volo (informativo, con correzione slowMo)
   if (flightStartTime !== null) {
@@ -525,6 +627,7 @@ function resetState() {
   isInAir=false; jumpAirFrames=0; lostFrames=0;
   flightStartTime=null; lastFlightMs=0; maxFlightMs=0; lastApproachSpd=0;
   AIR_THRESH=AIR_THRESH_INIT;
+  cmPerNormUnit=null; refPoint1=null; refPoint2=null; refCalibMode=false;
   jumpHistory=[]; jumpListData=[]; frameCount=0;
   document.getElementById('jumpList').innerHTML =
     '<div style="text-align:center;padding:16px;font-family:\'JetBrains Mono\',monospace;font-size:0.65rem;color:var(--muted);">Nessun salto ancora</div>';
