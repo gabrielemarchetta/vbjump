@@ -1,20 +1,22 @@
-const CACHE = 'vbjump-v4';
+const CACHE = 'vbjump-v5';
 const CORE = [
-  '/',
-  '/index.html',
-  '/css/style.css',
-  '/js/db.js',
-  '/js/ui.js',
-  '/js/nav.js',
-  '/js/athletes.js',
-  '/js/analysis.js',
-  '/js/compare.js',
-  '/js/ranking.js',
-  '/js/training.js',
-  '/js/pdf.js',
-  '/manifest.json',
-  '/assets/icon-192.png',
-  '/assets/icon-512.png',
+  'https://gabrielemarchetta.github.io/vbjump/',
+  'https://gabrielemarchetta.github.io/vbjump/index.html',
+  'https://gabrielemarchetta.github.io/vbjump/css/style.css',
+  'https://gabrielemarchetta.github.io/vbjump/js/db.js',
+  'https://gabrielemarchetta.github.io/vbjump/js/ui.js',
+  'https://gabrielemarchetta.github.io/vbjump/js/nav.js',
+  'https://gabrielemarchetta.github.io/vbjump/js/athletes.js',
+  'https://gabrielemarchetta.github.io/vbjump/js/analysis.js',
+  'https://gabrielemarchetta.github.io/vbjump/js/compare.js',
+  'https://gabrielemarchetta.github.io/vbjump/js/ranking.js',
+  'https://gabrielemarchetta.github.io/vbjump/js/training.js',
+  'https://gabrielemarchetta.github.io/vbjump/js/pdf.js',
+  'https://gabrielemarchetta.github.io/vbjump/js/timer.js',
+  'https://gabrielemarchetta.github.io/vbjump/js/settings.js',
+  'https://gabrielemarchetta.github.io/vbjump/manifest.json',
+  'https://gabrielemarchetta.github.io/vbjump/assets/icon-192.png',
+  'https://gabrielemarchetta.github.io/vbjump/assets/icon-512.png',
 ];
 
 self.addEventListener('install', e => {
@@ -35,8 +37,6 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
-  const url = new URL(e.request.url);
-  if (url.origin !== location.origin) return;
   e.respondWith(
     caches.match(e.request).then(cached => {
       const network = fetch(e.request).then(res => {
@@ -45,7 +45,7 @@ self.addEventListener('fetch', e => {
         }
         return res;
       }).catch(() => cached);
-      return e.request.url.includes('.html') || url.pathname === '/'
+      return e.request.url.includes('.html') || e.request.url.endsWith('/')
         ? network : cached || network;
     })
   );
