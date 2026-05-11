@@ -192,7 +192,29 @@ function renderTraining() {
     </div>
   </div>`;
 
-  // ── Program title ─────────────────────────────────────
+  // ── Analisi trend reale ───────────────────────────────
+  if (sessions.length >= 2) {
+    const lastN = sessions.slice(-3);
+    const avgRecent = Math.round(lastN.map(s=>s.maxHeight).reduce((a,b)=>a+b,0)/lastN.length);
+    const trendRecent = lastN[lastN.length-1].maxHeight - lastN[0].maxHeight;
+    const trendMsg = trendRecent > 3
+      ? `📈 Trend positivo +${trendRecent}cm nelle ultime sessioni — continua!`
+      : trendRecent < -3
+      ? `📉 Calo ${Math.abs(trendRecent)}cm — valuta più recupero o rivedi tecnica`
+      : `➡️ Andamento stabile — aumenta progressivamente il volume`;
+    html += `
+    <div style="padding:12px 14px;background:rgba(79,142,255,0.06);
+      border:1px solid rgba(79,142,255,0.2);border-radius:8px;margin-bottom:12px;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:0.6rem;color:var(--blue);
+        letter-spacing:2px;margin-bottom:6px;">📊 ANALISI ULTIME SESSIONI</div>
+      <div style="font-size:0.8rem;color:var(--txt);">${trendMsg}</div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:0.58rem;color:var(--muted);margin-top:4px;">
+        Media recente: ${avgRecent}cm · ${lastN.length} sessioni analizzate
+      </div>
+    </div>`;
+  }
+
+    // ── Program title ─────────────────────────────────────
   html += `
   <div style="font-family:'Bebas Neue',sans-serif;font-size:1.2rem;letter-spacing:3px;
     margin:16px 0 8px;color:var(--txt);">${prog.title}</div>
@@ -245,6 +267,32 @@ function renderTraining() {
       </div>
     </div>
   </div>`;
+
+  // ── Piano mensile ────────────────────────────────────
+  const monthPlan = {
+    elite:        ['Forza max + Pliometria alta intensità','Velocità + Reattività','Tecnica pallavolo specifica','Scarico attivo'],
+    avanzato:     ['Forza + Pliometria media','Sviluppo potenza','Tecnica + simulazione gara','Recupero'],
+    intermedio:   ['Forza base + Pliometria','Coordinazione + Salti','Tecnica pallavolo','Riposo attivo'],
+    principiante: ['Mobilità + Forza base','Tecnica salto','Pliometria leggera','Recupero'],
+    nessun_dato:  ['Valutazione','Basi forza','Tecnica','Recupero'],
+  };
+  const months = ['SETTIMANA 1','SETTIMANA 2','SETTIMANA 3','SETTIMANA 4'];
+  const plan = monthPlan[level];
+  html += `<div class="card"><div class="card-hd"><span class="card-lbl">📅 PIANO MENSILE</span></div>
+  <div class="card-body" style="padding:10px 14px;">
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;">`;
+  months.forEach((m,i) => {
+    const isActive = week >= i*3+1 && week <= (i+1)*3;
+    html += `<div style="padding:8px 6px;border-radius:6px;text-align:center;
+      background:${isActive?'rgba(79,142,255,0.15)':'rgba(0,0,0,0.2)'};
+      border:1px solid ${isActive?'rgba(79,142,255,0.4)':'var(--brd)'};">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:0.5rem;
+        color:${isActive?'var(--blue)':'var(--muted)'};margin-bottom:4px;">${m}</div>
+      <div style="font-size:0.65rem;color:${isActive?'var(--txt)':'var(--muted)'};line-height:1.3;">${plan[i]||''}</div>
+      ${isActive?'<div style="margin-top:4px;font-size:0.55rem;color:var(--blue);">← ATTUALE</div>':''}
+    </div>`;
+  });
+  html += `</div></div></div>`;
 
   // ── Plyometric exercises ──────────────────────────────
   html += `<div class="card"><div class="card-hd"><span class="card-lbl">⚡ ESERCIZI PLIOMETRICI</span></div>

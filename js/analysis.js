@@ -200,6 +200,13 @@ function resetRefCalib() {
 function setSlowMoFactor() {
   const sel = document.getElementById('videoFpsSelect');
   slowMoFactor = sel ? parseFloat(sel.value) : 1.0;
+  // Per video normali (30fps) aumenta le soglie perché
+  // c'è più jitter nei landmark e meno frame per rilevare il salto
+  if (slowMoFactor === 1.0) {
+    AIR_THRESH = 0.022;  // più alto per 30fps
+  } else {
+    AIR_THRESH = AIR_THRESH_INIT;  // standard per slow-mo
+  }
 }
 
 function setCorrectionFactor(val) {
@@ -331,7 +338,7 @@ function onPoseResults(results) {
 
   const elevNorm = baselineY - hipY;
 
-  // ── SCALA: oggetto riferimento ha priorità, poi altezza atleta ──
+  // ── SCALA ────────────────────────────────────────────
   let scale;
   if (cmPerNormUnit !== null) {
     scale = cmPerNormUnit;
@@ -344,11 +351,25 @@ function onPoseResults(results) {
 
   curJumpH = Math.max(0, Math.round(elevNorm * scale * correctionFactor));
 
-  // ── JUMP DETECTION ────────────────────────────────────
-  const ankleOnGround = baselineAnkleY !== null && ankleVis > 0.3
-    && ankleY >= baselineAnkleY - 0.018;
+  // ── RILEVAMENTO RINCORSA ──────────────────────────────
+  // Calcola velocità laterale anche per distinguere rincorsa da fermo
+  // Durante rincorsa le anche si muovono orizzontalmente prima del decollo
+  const recentX = hipXHistory.filter(p => videoEl.currentTime - p.t <= 0.3);
+  const isApproaching = recentX.length >= 2
+    ? Math.abs(recentX[recentX.length-1].x - recentX[0].x) > 0.04
+    : false;
 
-  if (elevNorm > AIR_THRESH && !ankleOnGround) {
+  // Soglia più bassa durante rincorsa (corpo inclinato → anche più alte)
+  const dynThresh = isApproaching ? AIR_THRESH * 0.80 : AIR_THRESH;
+
+  // Ground check con caviglie + velocità verticale
+  // Durante atterraggio con rincorsa le caviglie tornano al suolo
+  // anche se le anche sono ancora un po' alte per inerzia
+  const ankleOnGround = baselineAnkleY !== null && ankleVis > 0.25
+    && ankleY >= baselineAnkleY - 0.022;
+
+  // ── JUMP DETECTION ────────────────────────────────────
+  if (elevNorm > dynThresh && !ankleOnGround) {
     if (!isInAir) {
       jumpAirFrames++;
       if (jumpAirFrames >= MIN_AIR_FRAMES) {
@@ -356,6 +377,7 @@ function onPoseResults(results) {
         jumpPeakNorm    = 0;
         flightStartTime = videoEl.currentTime;
         AIR_THRESH      = AIR_THRESH_GAME;
+        // Approch speed
         const now = videoEl.currentTime;
         const w05 = hipXHistory.filter(p => now-p.t<=0.6 && now-p.t>0.05);
         if (w05.length >= 2) {
@@ -367,8 +389,14 @@ function onPoseResults(results) {
     }
     if (isInAir) jumpPeakNorm = Math.max(jumpPeakNorm, elevNorm);
   } else {
-    jumpAirFrames = 0;
-    if (isInAir) _landingDetected();
+    // Decay graduale — non resettare subito durante rincorsa
+    if (isApproaching && isInAir) {
+      jumpAirFrames = Math.max(0, jumpAirFrames - 1);
+      if (jumpAirFrames === 0) _landingDetected();
+    } else {
+      jumpAirFrames = 0;
+      if (isInAir) _landingDetected();
+    }
   }
 
   if (frameCount % 4 === 0) {
