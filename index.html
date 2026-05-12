@@ -103,14 +103,17 @@
           </div>
           <div style="display:flex;flex-direction:column;justify-content:flex-end;gap:6px;">
             <button class="btn btn-primary btn-sm" onclick="startRefCalib()" style="justify-content:center;">📍 CALIBRA</button>
+            <button class="btn btn-green btn-sm" onclick="promptSaveCalibration()" style="justify-content:center;">💾 SALVA</button>
             <button class="btn btn-outline btn-sm" onclick="resetRefCalib()" style="justify-content:center;">↺ RESET</button>
           </div>
         </div>
         <div style="font-family:'JetBrains Mono',monospace;font-size:0.6rem;color:var(--blue);line-height:1.8;">
-          💡 Oggetti utili:<br>
-          · Rete pallavolo = 243cm<br>
-          · Cono standard = 30cm<br>
-          · Metro/bastone = qualsiasi misura nota
+          💡 Oggetti utili: Rete = 100cm · Cono = 30cm · Bastone = misura nota
+        </div>
+        <div style="margin-top:10px;">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:0.6rem;color:var(--muted);
+            letter-spacing:2px;margin-bottom:8px;">CALIBRAZIONI SALVATE</div>
+          <div id="calibStoreWrap"></div>
         </div>
       </div>
     </div>
@@ -204,6 +207,18 @@
   </div>
 </div>
 
+<!-- ═══ GRUPPO ═══ -->
+<div class="page" id="page-group">
+  <div class="page-hd"><div class="page-title">GRUPPO</div><div class="page-sub">SESSIONE ALLENAMENTO SQUADRA</div></div>
+  <div id="groupContent"></div>
+</div>
+
+<!-- ═══ REPORT ═══ -->
+<div class="page" id="page-report">
+  <div class="page-hd"><div class="page-title">REPORT</div><div class="page-sub">ANDAMENTO SETTIMANALE TEAM</div></div>
+  <div id="weeklyContent"></div>
+</div>
+
 <!-- ═══ RANKING ═══ -->
 <div class="page" id="page-ranking">
   <div class="page-hd"><div class="page-title">CLASSIFICA</div><div class="page-sub">RANKING TEAM PER ELEVAZIONE</div></div>
@@ -288,9 +303,9 @@
 <nav class="bottom-nav">
   <button class="nav-tab active" id="tab-athletes" onclick="showPage('athletes')"><span class="ni">👥</span>ATLETI</button>
   <button class="nav-tab" id="tab-analysis" onclick="showPage('analysis')"><span class="ni">🎬</span>ANALISI</button>
+  <button class="nav-tab" id="tab-group" onclick="showPage('group')"><span class="ni">🏐</span>GRUPPO</button>
   <button class="nav-tab" id="tab-ranking" onclick="showPage('ranking')"><span class="ni">🏆</span>RANKING</button>
-  <button class="nav-tab" id="tab-training" onclick="showPage('training')"><span class="ni">📋</span>SCHEDA</button>
-  <button class="nav-tab" id="tab-compare" onclick="showPage('compare')"><span class="ni">📊</span>STORICO</button>
+  <button class="nav-tab" id="tab-report" onclick="showPage('report')"><span class="ni">📈</span>REPORT</button>
   <button class="nav-tab" id="tab-settings" onclick="showPage('settings')"><span class="ni">⚙️</span>CLUB</button>
 </nav>
 
@@ -516,9 +531,13 @@
 <script src="js/pdf.js"></script>
 <script src="js/timer.js"></script>
 <script src="js/settings.js"></script>
+<script src="js/calib_store.js"></script>
+<script src="js/session_group.js"></script>
+<script src="js/weekly_report.js"></script>
 <script>
   renderAthletes();
   applyClubBranding();
+  setTimeout(() => renderCalibStore(), 100);
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }

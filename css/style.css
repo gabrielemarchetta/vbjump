@@ -306,3 +306,9 @@ input[type=color].inp {
 .bottom-nav { }
 .nav-tab { font-size: 0.48rem; }
 .nav-tab .ni { font-size: 1.15rem; }
+
+/* ══════════════════════════════════════════
+   6 TAB NAV — testo più piccolo
+══════════════════════════════════════════ */
+.nav-tab { font-size: 0.46rem; letter-spacing: 0.5px; }
+.nav-tab .ni { font-size: 1.1rem; }

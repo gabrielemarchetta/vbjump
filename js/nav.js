@@ -14,6 +14,8 @@ function showPage(name) {
   if (name === 'training') { populateAthleteSelect('trainingAthlete'); renderTraining(); }
   if (name === 'compare')  { populateAthleteSelect('cmpSelect'); populateAthleteSelect2(); renderCompare(); }
   if (name === 'settings') { renderSettings(); updateInfoStats(); }
+  if (name === 'group')    { renderGroup(); }
+  if (name === 'report')   { renderWeeklyReport(); }
 
   window.scrollTo(0, 0);
 }
