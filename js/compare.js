@@ -112,6 +112,9 @@ function renderCompare() {
         <div class="s-bar-wrap"><div class="s-bar" style="width:${pct}%;background:linear-gradient(90deg,var(--blue),var(--green));"></div></div>
         <div style="display:flex;align-items:center;gap:8px;">
           <div><span class="s-val" style="color:var(--blue);">${s.maxHeight}</span><span style="font-size:0.7rem;color:var(--muted);"> cm</span></div>
+          <button onclick="openEditSession('${s.id}')"
+            style="background:transparent;border:1px solid var(--blue);color:var(--blue);border-radius:5px;
+            width:28px;height:28px;cursor:pointer;font-size:0.75rem;display:flex;align-items:center;justify-content:center;flex-shrink:0;">✏️</button>
           <button onclick="confirmDeleteSession('${s.id}')"
             style="background:transparent;border:1px solid var(--red);color:var(--red);border-radius:5px;
             width:28px;height:28px;cursor:pointer;font-size:0.85rem;display:flex;align-items:center;justify-content:center;flex-shrink:0;">🗑</button>
@@ -267,6 +270,98 @@ function confirmDeleteSession(sessionId) {
   deleteSession(sessionId);
   renderCompare();
   showToast('🗑 Sessione eliminata');
+}
+
+// ── Modal modifica sessione ───────────────────────────────
+function openEditSession(sessionId) {
+  const s = db.sessions.find(x => x.id === sessionId);
+  if (!s) return;
+
+  // Crea modal dinamico
+  let existing = document.getElementById('modalEditSession');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.className = 'modal-ov open';
+  modal.id = 'modalEditSession';
+
+  const jumpsHtml = (s.jumps || [s.maxHeight]).map((j, i) => `
+    <div id="jump_edit_${i}" style="display:flex;align-items:center;gap:8px;
+      padding:8px 10px;background:rgba(0,0,0,0.3);border:1px solid var(--brd);
+      border-radius:5px;margin-bottom:6px;">
+      <span style="font-family:'JetBrains Mono',monospace;font-size:0.65rem;
+        color:var(--muted);min-width:60px;">SALTO #${i+1}</span>
+      <input type="number" value="${j}" min="5" max="120"
+        id="jval_${i}"
+        style="flex:1;padding:6px 10px;background:var(--surf2);border:1px solid var(--brd2);
+        border-radius:5px;color:var(--txt);font-size:0.9rem;outline:none;">
+      <span style="font-family:'JetBrains Mono',monospace;font-size:0.7rem;color:var(--muted);">cm</span>
+      <button onclick="removeJumpFromEdit(${i})"
+        style="background:transparent;border:1px solid var(--red);color:var(--red);
+        border-radius:5px;width:28px;height:28px;cursor:pointer;font-size:0.8rem;">🗑</button>
+    </div>`).join('');
+
+  modal.innerHTML = `
+  <div class="modal" style="max-height:85vh;overflow-y:auto;">
+    <div class="modal-handle"></div>
+    <div class="modal-title" style="font-size:1.2rem;">MODIFICA SESSIONE</div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:0.62rem;color:var(--muted);margin-bottom:14px;">
+      ${s.date}${s.note?' · '+s.note:''}
+    </div>
+    <div class="fg">
+      <label class="lbl">NOTE SESSIONE</label>
+      <input class="inp" id="editSessionNote" type="text" value="${s.note||''}" placeholder="es. Pre-gara...">
+    </div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:0.62rem;color:var(--muted);
+      letter-spacing:2px;margin-bottom:10px;">SALTI REGISTRATI</div>
+    <div id="editJumpsList">${jumpsHtml}</div>
+    <div class="modal-footer" style="margin-top:14px;">
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('modalEditSession').remove()">ANNULLA</button>
+      <button class="btn btn-primary btn-sm" style="flex:1;justify-content:center;"
+        onclick="saveEditedSession('${sessionId}')">✓ SALVA</button>
+    </div>
+  </div>`;
+
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  document.body.appendChild(modal);
+}
+
+function removeJumpFromEdit(idx) {
+  const el = document.getElementById('jump_edit_' + idx);
+  if (el) el.style.opacity = '0.3';
+  const input = document.getElementById('jval_' + idx);
+  if (input) input.disabled = true;
+}
+
+function saveEditedSession(sessionId) {
+  const s = db.sessions.find(x => x.id === sessionId);
+  if (!s) return;
+
+  // Raccoglie i salti validi (non disabilitati)
+  const newJumps = [];
+  let i = 0;
+  while (true) {
+    const input = document.getElementById('jval_' + i);
+    if (!input) break;
+    if (!input.disabled) {
+      const val = parseInt(input.value);
+      if (val >= 5 && val <= 120) newJumps.push(val);
+    }
+    i++;
+  }
+
+  if (!newJumps.length) { showToast('Almeno un salto richiesto'); return; }
+
+  s.jumps    = newJumps;
+  s.maxHeight = Math.max(...newJumps);
+  s.avgHeight = Math.round(newJumps.reduce((a,b)=>a+b,0)/newJumps.length);
+  s.jumpCount = newJumps.length;
+  s.note      = document.getElementById('editSessionNote')?.value || s.note;
+
+  saveDB();
+  document.getElementById('modalEditSession')?.remove();
+  renderCompare();
+  showToast('✓ Sessione aggiornata!');
 }
 
 // ── Share session via WhatsApp ────────────────────────────

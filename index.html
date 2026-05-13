@@ -235,10 +235,17 @@
 <!-- ═══ CONFRONTO ═══ -->
 <div class="page" id="page-compare">
   <div class="page-hd"><div class="page-title">CONFRONTO</div><div class="page-sub">PROGRESSI E CONFRONTO ATLETI</div></div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
-    <div class="fg" style="margin:0;"><label class="lbl">ATLETA 1</label><select class="inp" id="cmpSelect" onchange="renderCompare()"><option value="">— Seleziona —</option></select></div>
-    <div class="fg" style="margin:0;"><label class="lbl">VS ATLETA 2</label><select class="inp" id="cmpSelect2" onchange="renderCompare()"><option value="">— Nessuno —</option></select></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+    <div class="fg" style="margin:0;"><label class="lbl">ATLETA 1</label>
+      <select class="inp" id="cmpSelect"><option value="">— Seleziona —</option></select>
+    </div>
+    <div class="fg" style="margin:0;"><label class="lbl">VS ATLETA 2 (opz.)</label>
+      <select class="inp" id="cmpSelect2"><option value="">— Nessuno —</option></select>
+    </div>
   </div>
+  <button class="btn btn-primary btn-full" onclick="renderCompare()" style="margin-bottom:12px;">
+    📊 MOSTRA CONFRONTO
+  </button>
   <div id="compareContent">
     <div style="text-align:center;padding:40px 16px;color:var(--muted);">
       <div style="font-size:2rem;margin-bottom:10px;">📊</div>
