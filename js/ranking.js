@@ -85,7 +85,7 @@ function renderRanking() {
     html += `
     <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;
       border-bottom:1px solid var(--brd);cursor:pointer;"
-      onclick="showPage('compare');document.getElementById('cmpSelect').value='${a.id}';renderCompare();">
+      onclick="goToCompare('${a.id}');">
       <div style="font-family:'Bebas Neue',sans-serif;font-size:1.4rem;color:var(--muted);
         min-width:28px;text-align:center;">${i < 3 ? medals[i] : '#'+(i+1)}</div>
       <div style="width:36px;height:36px;border-radius:50%;flex-shrink:0;
@@ -138,4 +138,17 @@ function renderRanking() {
   </div>`;
 
   content.innerHTML = html;
+}
+
+// ── Navigate to compare with athlete pre-selected ────────
+function goToCompare(athId) {
+  showPage('compare');
+  // Aspetta che i select siano popolati prima di impostare il valore
+  setTimeout(() => {
+    const sel = document.getElementById('cmpSelect');
+    if (sel) {
+      sel.value = athId;
+      renderCompare();
+    }
+  }, 100);
 }

@@ -68,11 +68,7 @@ function renderAthletes() {
         </button>
       </div>`;
 
-    card.onclick = () => {
-      showPage('compare');
-      document.getElementById('cmpSelect').value = a.id;
-      renderCompare();
-    };
+    card.onclick = () => goToCompare(a.id);
     list.appendChild(card);
   });
 }
