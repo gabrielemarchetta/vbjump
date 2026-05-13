@@ -142,13 +142,17 @@ function renderRanking() {
 
 // ── Navigate to compare with athlete pre-selected ────────
 function goToCompare(athId) {
-  showPage('compare');
-  // Aspetta che i select siano popolati prima di impostare il valore
-  setTimeout(() => {
-    const sel = document.getElementById('cmpSelect');
-    if (sel) {
-      sel.value = athId;
-      renderCompare();
-    }
-  }, 100);
+  // Prima popola i select manualmente
+  populateAthleteSelect('cmpSelect');
+  populateAthleteSelect2();
+  // Poi naviga
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('page-compare').classList.add('active');
+  document.getElementById('tab-compare').classList.add('active');
+  // Imposta il valore e renderizza
+  const sel = document.getElementById('cmpSelect');
+  if (sel) sel.value = athId;
+  renderCompare();
+  window.scrollTo(0, 0);
 }
